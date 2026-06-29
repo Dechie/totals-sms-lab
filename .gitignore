@@ -1,0 +1,7 @@
+.dart_tool/
+.packages
+build/
+*.report.md
+
+# This is an application/CLI, so pubspec.lock SHOULD be committed for
+# reproducible builds — it is intentionally not ignored.

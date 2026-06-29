@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "current": "95cc048f21a46e2f",
+  "count": 1,
+  "entries": [
+    {
+      "signature": "95cc048f21a46e2f",
+      "recordedAt": "2026-06-30T01:07:07.484712",
+      "patternCount": 95,
+      "bankCount": 10,
+      "totalsRev": "85694be",
+      "source": "vendored snapshot · Totals rev 85694be · 2026-06-30",
+      "note": "initial vendored snapshot (Totals rev 85694be)",
+      "patternsPerBank": {
+        "CBE": 14,
+        "Awash": 11,
+        "BOA": 5,
+        "Dashen": 7,
+        "Zemen": 8,
+        "Telebirr": 27,
+        "NIB": 4,
+        "MPESA": 13,
+        "Aba": 6
+      }
+    }
+  ]
+}

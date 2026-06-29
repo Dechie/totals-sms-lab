@@ -1,0 +1,46 @@
+[
+  {
+    "address": "CBE",
+    "body": "Dear Customer, your Account 1*****3456 has been credited with ETB 5,000.00 on 2024-05-01. Your Current Balance is ETB 12,340.55. https://apps.cbe.com.et:100/?id=FT24ABCD1234"
+  },
+  {
+    "address": "CBE",
+    "body": "Dear Customer, your Account 1*****3456 has been credited with ETB 1,200.00 on 2024-05-03. Your Current Balance is ETB 13,540.55. https://apps.cbe.com.et:100/?id=FT24ABCD9999"
+  },
+  {
+    "address": "CBE",
+    "body": "Salary payment ETB 22,000.00 has reached your wallet. New scheme effective 2024-06-01."
+  },
+  {
+    "address": "DashenBank",
+    "body": "Salary ETB 18,500.00 credited to your account 2****7788 on 31/05/2024. Ref DSH889900."
+  },
+  {
+    "address": "DashenBank",
+    "body": "Salary ETB 19,000.00 credited to your account 2****7788 on 30/06/2024. Ref DSH889901."
+  },
+  {
+    "address": "DashenBank",
+    "body": "Salary ETB 17,250.00 credited to your account 2****1122 on 31/07/2024. Ref DSH889902."
+  },
+  {
+    "address": "Awash Bank",
+    "body": "POS Purchase of ETB 350.00 at SUPERMARKET on 2024-06-10 13:45. Card ****4321."
+  },
+  {
+    "address": "Awash Bank",
+    "body": "POS Purchase of ETB 1,299.99 at ELECTRONICS on 2024-06-11 09:02. Card ****4321."
+  },
+  {
+    "address": "127",
+    "body": "You have received ETB 200.00 from 0912345678. Your telebirr balance is ETB 540.00. Transaction number CGH7782211."
+  },
+  {
+    "address": "127",
+    "body": "You have transferred ETB 75.00 to 0987654321. Your telebirr balance is ETB 465.00. Transaction number CGH7782212."
+  },
+  {
+    "address": "Unknown Sender",
+    "body": "Your verification code is 884512. Do not share it with anyone."
+  }
+]

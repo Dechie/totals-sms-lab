@@ -1,0 +1,21 @@
+name: sms_pattern_lab
+description: >-
+  A standalone parser diagnostics and pattern discovery tool for regex-based
+  SMS parsing projects such as Totals. Runs entirely offline with no production
+  dependencies.
+version: 1.0.0
+publish_to: "none"
+
+environment:
+  sdk: ">=3.2.6 <4.0.0"
+
+# Intentionally zero third-party RUNTIME dependencies.
+# The tool must run entirely offline and introduce nothing into host projects.
+dependencies:
+
+dev_dependencies:
+  lints: ^4.0.0
+  test: ^1.25.0
+
+executables:
+  sms-pattern-lab: sms_pattern_lab
