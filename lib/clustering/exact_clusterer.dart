@@ -12,7 +12,10 @@ class ExactClusterer {
   final Normalizer _normalizer;
   final int maxExamples;
 
-  ExactClusterer({Normalizer? normalizer, this.maxExamples = 3})
+  // Keep a few real examples per category so a developer can see the *range*
+  // of values a field takes when authoring the regex (character classes,
+  // optional segments) — not just one specimen.
+  ExactClusterer({Normalizer? normalizer, this.maxExamples = 5})
       : _normalizer = normalizer ?? Normalizer();
 
   /// Cluster the unmatched subset of [results].

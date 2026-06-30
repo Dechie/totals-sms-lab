@@ -53,6 +53,11 @@ class BaselineRecord {
 /// the parser baseline evolved over time. Each [record] appends a new entry
 /// only when the signature actually changed, so the file captures *transitions*
 /// rather than every run.
+///
+/// ⚑ V3/V4: this tracks parser *baselines*, not *coverage results*. Trend
+/// analysis (V3) and regression detection / historical compare (V4) need a
+/// parallel coverage-history store keyed by (baselineSignature, datasetId).
+/// ROADMAP_NOTES.md → "Coverage history" specifies the schema and why.
 class BaselineHistory {
   static const int currentVersion = 1;
 

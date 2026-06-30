@@ -1,0 +1,10 @@
+{
+  "signature": "5b5d5252f59126a3",
+  "probes": {
+    "regexFlags": "66374c7e3e39de85",
+    "cleanSmsText": "0afc5fc0087231af",
+    "normalizeSenderToken": "7badfa83b350dece",
+    "addressMatchesCode": "31d70f4af5def0ac",
+    "looksLikeTransaction": "20c06339f1451906"
+  }
+}

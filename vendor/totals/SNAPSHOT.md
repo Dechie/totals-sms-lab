@@ -7,6 +7,7 @@ self-contained and can run without a Totals checkout next to it.
 |---|---|
 | `banks.json` | `app/assets/banks.json` |
 | `sms_patterns.json` | `app/assets/sms_patterns.json` |
+| `fidelity.json` | hash of the parsing-*logic* source regions the lab mirrors (for `diff`'s logic-drift guard) |
 
 - Snapshot taken from Totals git rev: **85694be**
 - Date: 2026-06-30

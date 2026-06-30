@@ -3,6 +3,11 @@ import '../models/template_cluster.dart';
 /// Groups exact clusters into broader *template families* (e.g. "Outgoing
 /// Transfers") whose members differ only in wording.
 ///
+/// ⚑ V2/V3 implementers: read ROADMAP_NOTES.md before changing this contract.
+/// Today `group()` only *tags* clusters (sets `similarityGroup`). Merging into
+/// families requires a `TemplateFamily` type and a pipeline/report change —
+/// the notes spell out the exact shape.
+///
 /// Roadmap:
 ///   * V2 — Levenshtein distance to merge near-identical templates.
 ///   * V3 — TF-IDF + cosine similarity for semantic families.

@@ -26,7 +26,7 @@ void main() {
 
     final result = AnalysisPipeline(adapter: adapter).run(messages);
 
-    // Sanity: counts reconcile.
+    // Coverage counts EVERY message (noise is separated downstream, not dropped).
     expect(result.coverage.total, equals(messages.length));
     expect(result.coverage.matched + result.coverage.unmatched,
         equals(messages.length));
@@ -46,5 +46,33 @@ void main() {
     final messages = DatasetLoader.load('example/sample_sms.json');
     final result = AnalysisPipeline(adapter: adapter).run(messages);
     expect(result.coverage.overallCoveragePercent, inInclusiveRange(0, 100));
+  });
+
+  test('unknown-sender transaction → candidate; non-transaction → noise; '
+      'coverage counts both', () {
+    if (adapter == null) return;
+    // sample_sms.json has two unknown-sender messages: a "Hibret Bank" receipt
+    // (transaction) and a "verification code" (noise).
+    final messages = DatasetLoader.load('example/sample_sms.json');
+    final cov = AnalysisPipeline(adapter: adapter).run(messages).coverage;
+
+    bool isOtp(c) => c.template.toLowerCase().contains('verification code');
+    bool isReceipt(c) => c.template.toLowerCase().contains('received');
+
+    // The transaction from an unrecognized sender is a candidate (not noise).
+    expect(cov.candidateNewFormats.any(isReceipt), isTrue);
+    expect(cov.candidateNewFormats.every((c) => c.likelyBankId == null), isTrue);
+
+    // The verification code is classified as noise, kept out of candidates...
+    expect(cov.candidateNewFormats.any(isOtp), isFalse);
+    expect(cov.noiseClusters.any(isOtp), isTrue);
+
+    // ...but coverage still counted it (it's in the full unmatched set), and
+    // candidates + noise partition the unattributed clusters.
+    expect(cov.unmatchedClusters.any(isOtp), isTrue);
+    expect(cov.attributedClusters.length +
+            cov.candidateNewFormats.length +
+            cov.noiseClusters.length,
+        equals(cov.unmatchedClusters.length));
   });
 }

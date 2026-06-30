@@ -9,10 +9,15 @@ class MarkdownReport {
   final String parserName;
   final int topClusters;
 
+  /// When true, non-transaction "noise" clusters are also shown as candidate
+  /// new formats (the `--no-filter` view). Default hides them.
+  final bool includeNoise;
+
   const MarkdownReport(
     this.report, {
     this.parserName = 'Parser',
     this.topClusters = 25,
+    this.includeNoise = false,
   });
 
   String render() {
@@ -20,6 +25,7 @@ class MarkdownReport {
     _header(b);
     _summary(b);
     _parserDashboard(b);
+    _candidateNewFormats(b);
     _unmatchedClusters(b);
     _footer(b);
     return b.toString();
@@ -45,7 +51,44 @@ class MarkdownReport {
         '| **Overall coverage** | **${_pct(report.overallCoveragePercent)}** |');
     b.writeln('| Distinct unmatched templates | '
         '${report.unmatchedClusters.length} |');
+    b.writeln('| Candidate new formats (unknown sender) | '
+        '${report.candidateNewFormats.length} |');
+    if (report.noiseClusters.isNotEmpty) {
+      b.writeln('| Noise clusters (filtered) | '
+          '${report.noiseClusters.length} |');
+    }
     b.writeln();
+  }
+
+  /// Discovery-first section: formats from senders no parser recognizes — likely
+  /// whole banks/formats with no parser yet. Listed before the per-bank gaps
+  /// because these are the "unknown unknowns" the tool exists to surface.
+  void _candidateNewFormats(StringBuffer b) {
+    final clusters = includeNoise
+        ? [...report.candidateNewFormats, ...report.noiseClusters]
+        : report.candidateNewFormats;
+    if (clusters.isEmpty) return;
+
+    b.writeln('## Candidate New Formats (unrecognized sender)');
+    b.writeln();
+    b.writeln('These messages matched **no** parser and came from a sender no '
+        'bank is configured for — strong candidates for a format (or an entire '
+        'bank) you have no parser for yet.');
+    if (!includeNoise && report.noiseClusters.isNotEmpty) {
+      b.writeln();
+      b.writeln('_(${report.noiseClusters.length} non-transaction cluster(s) '
+          'filtered out as noise — run with `--no-filter` to include them.)_');
+    }
+    b.writeln();
+    final shown = clusters.take(topClusters).toList();
+    if (clusters.length > shown.length) {
+      b.writeln('_Showing top ${shown.length} of ${clusters.length}._');
+      b.writeln();
+    }
+    var i = 1;
+    for (final c in shown) {
+      _cluster(b, i++, c);
+    }
   }
 
   void _parserDashboard(StringBuffer b) {
@@ -83,12 +126,13 @@ class MarkdownReport {
   }
 
   void _unmatchedClusters(StringBuffer b) {
-    b.writeln('## Unmatched Pattern Reports');
+    b.writeln('## Unmatched Pattern Reports (known banks)');
     b.writeln();
-    final clusters = report.unmatchedClusters;
+    // Attributed gaps only — unknown-sender clusters get their own section.
+    final clusters = report.attributedClusters;
     if (clusters.isEmpty) {
-      b.writeln('🎉 No unmatched messages — every parser is fully covered for '
-          'this dataset.');
+      b.writeln('🎉 No unmatched messages from recognized banks — every '
+          'configured parser is fully covered for this dataset.');
       b.writeln();
       return;
     }
@@ -111,6 +155,7 @@ class MarkdownReport {
         '${c.occurrences == 1 ? '' : 's'}');
     b.writeln();
     b.writeln('- **Likely parser:** ${c.likelyBankName ?? 'Unknown'}');
+    b.writeln('- **Regex-readiness:** ${c.regexReadiness}');
     if (c.similarityGroup != null) {
       b.writeln('- **Similarity group:** ${c.similarityGroup}');
     }

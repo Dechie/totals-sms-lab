@@ -13,10 +13,15 @@ class AnalysisResult {
   final CoverageReport coverage;
   final DatasetStatistics statistics;
 
+  /// Name of the host parser framework (from the adapter), so reports are not
+  /// coupled to a specific project name. See ROADMAP_NOTES.md (V5 plugins).
+  final String parserName;
+
   const AnalysisResult({
     required this.parseResults,
     required this.coverage,
     required this.statistics,
+    required this.parserName,
   });
 }
 
@@ -29,6 +34,7 @@ class AnalysisPipeline {
   final ParserAdapter adapter;
   final ExactClusterer clusterer;
   final SimilarityGrouper grouper;
+
   late final CoverageAnalyzer _coverage;
 
   AnalysisPipeline({
@@ -41,14 +47,22 @@ class AnalysisPipeline {
   }
 
   AnalysisResult run(List<SmsMessage> messages) {
+    // Every message is parsed and counted — coverage reflects the whole
+    // dataset. Non-transaction *noise* is separated downstream (in the
+    // CoverageReport's candidate vs noise split), not dropped here.
     final parseResults = adapter.parseAll(messages);
     final coverage = _coverage.analyze(parseResults);
+    // V1: IdentityGrouper tags in place and returns the same list. V2/V3 will
+    // need this to MERGE clusters into families — at which point the pipeline
+    // must consume the returned structure and CoverageReport must become
+    // family-aware. See ROADMAP_NOTES.md → "V2 · TemplateFamily".
     grouper.group(coverage.unmatchedClusters);
     final stats = DatasetStatistics.from(parseResults);
     return AnalysisResult(
       parseResults: parseResults,
       coverage: coverage,
       statistics: stats,
+      parserName: adapter.name,
     );
   }
 }

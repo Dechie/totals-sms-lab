@@ -42,16 +42,39 @@ class CoverageReport {
   /// All unmatched clusters across every bank, sorted by priority.
   final List<TemplateCluster> unmatchedClusters;
 
+  /// Unmatched clusters from senders no bank parser recognizes **that look like
+  /// transactions** — the deepest discovery signal: formats (and likely whole
+  /// banks) you have **no parser for yet**. The noise filter (default on)
+  /// excludes non-transaction unattributed messages, which land in
+  /// [noiseClusters] instead.
+  final List<TemplateCluster> candidateNewFormats;
+
+  /// Unattributed clusters that do NOT look like transactions (OTPs, promos,
+  /// system notices). Kept out of [candidateNewFormats] by default; shown only
+  /// with `--no-filter`. Coverage still counts these messages.
+  final List<TemplateCluster> noiseClusters;
+
   const CoverageReport({
     required this.total,
     required this.matched,
     required this.unattributed,
     required this.parsers,
     required this.unmatchedClusters,
+    this.candidateNewFormats = const [],
+    this.noiseClusters = const [],
   });
 
   int get unmatched => total - matched;
 
   double get overallCoveragePercent =>
       total == 0 ? 0.0 : (matched / total) * 100.0;
+
+  /// Unmatched clusters that ARE attributable to a known bank — the
+  /// "improve an existing parser" gaps, as opposed to candidate new formats.
+  List<TemplateCluster> get attributedClusters =>
+      unmatchedClusters.where((c) => c.likelyBankId != null).toList();
+
+  /// Every unattributed cluster (candidates + noise), regardless of filtering.
+  List<TemplateCluster> get unknownSenderClusters =>
+      [...candidateNewFormats, ...noiseClusters];
 }

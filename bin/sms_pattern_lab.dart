@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:sms_pattern_lab/analysis/analysis_pipeline.dart';
 import 'package:sms_pattern_lab/baseline/baseline_diff.dart';
 import 'package:sms_pattern_lab/baseline/baseline_history.dart';
+import 'package:sms_pattern_lab/baseline/logic_fidelity.dart';
 import 'package:sms_pattern_lab/baseline/parser_baseline.dart';
+import 'package:sms_pattern_lab/corpus/corpus.dart';
 import 'package:sms_pattern_lab/models/coverage_report.dart';
 import 'package:sms_pattern_lab/models/sms_message.dart';
 import 'package:sms_pattern_lab/parser_adapter/totals_parser_adapter.dart';
@@ -33,6 +35,9 @@ void main(List<String> argv) {
       case 'templates':
         _runTemplates(args);
         break;
+      case 'discover':
+        _runDiscover(args);
+        break;
       case 'pull':
         _runPull(args);
         break;
@@ -47,6 +52,9 @@ void main(List<String> argv) {
         break;
       case 'history':
         _runHistory(args);
+        break;
+      case 'corpus':
+        _runCorpus(args);
         break;
       case 'compare':
         _runCompare();
@@ -128,7 +136,7 @@ List<SmsMessage> _pullFromDevice(_Args args) {
 void _runAnalyze(_Args args,
     {bool writeReport = false, bool quiet = false, bool reportOnly = false}) {
   final result = _analyze(args);
-  if (!reportOnly) _printCoverageConsole(result.coverage);
+  if (!reportOnly) _printCoverageConsole(result.coverage, includeNoise: args.noFilter);
 
   if (writeReport) {
     // --html (or an --out ending in .html) writes the self-contained HTML
@@ -138,8 +146,9 @@ void _runAnalyze(_Args args,
     if (wantsHtml) {
       final html = HtmlReport(
         result.coverage,
-        parserName: 'Totals Parser Framework',
+        parserName: result.parserName,
         topClusters: args.top,
+        includeNoise: args.noFilter,
       ).render();
       final outPath = args.out ?? 'build/coverage.report.html';
       _writeFile(outPath, html);
@@ -148,13 +157,32 @@ void _runAnalyze(_Args args,
     } else {
       final md = MarkdownReport(
         result.coverage,
-        parserName: 'Totals Parser Framework',
+        parserName: result.parserName,
         topClusters: args.top,
+        includeNoise: args.noFilter,
       ).render();
       final outPath = args.out ?? 'build/coverage.report.md';
       _writeFile(outPath, md);
       stdout.writeln('\n📝 Markdown report written to $outPath');
     }
+  }
+
+  _enforceMinCoverage(args, result.coverage.overallCoveragePercent);
+}
+
+/// CI gate: fail (exit 4) when overall coverage is below `--min-coverage`.
+/// Pairs with `diff`'s drift exit (3) so a pipeline can gate on both staleness
+/// and a coverage floor.
+void _enforceMinCoverage(_Args args, double coverage) {
+  final min = args.minCoverage;
+  if (min == null) return;
+  if (coverage + 1e-9 < min) {
+    stdout.writeln('\n✗ Coverage ${coverage.toStringAsFixed(1)}% is below the '
+        '--min-coverage threshold of ${min.toStringAsFixed(1)}%.');
+    exitCode = 4;
+  } else {
+    stdout.writeln('\n✓ Coverage ${coverage.toStringAsFixed(1)}% meets the '
+        '--min-coverage threshold of ${min.toStringAsFixed(1)}%.');
   }
 }
 
@@ -162,6 +190,81 @@ void _writeFile(String path, String contents) {
   final file = File(path);
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(contents);
+}
+
+/// Breadth-first discovery: unlike `analyze`/`pull` (which target CBE by
+/// default), `discover` looks at **every sender** and leads with candidate new
+/// formats — the founding use case ("what am I missing, including banks I don't
+/// parse?"). Source is a dataset file, or `--adb` to pull the whole inbox.
+void _runDiscover(_Args args) {
+  final adapter = _resolveAdapter(args);
+
+  final List<SmsMessage> messages;
+  if (args.adb) {
+    final source =
+        AdbSmsSource(adbPath: args.adbPath, deviceSerial: args.device);
+    try {
+      // Breadth-first: all senders unless the user explicitly scoped with --bank.
+      messages = source.fetch(senderFilter: args.banks);
+    } on AdbException catch (e) {
+      throw _CliError(e.message);
+    }
+    if (messages.isEmpty) throw _CliError('No SMS pulled from device.');
+    stdout.writeln('Pulled ${messages.length} message(s) from device '
+        '(all senders)');
+  } else if (args.positional.isNotEmpty) {
+    messages = DatasetLoader.load(args.positional.first);
+    stdout.writeln('Loaded ${messages.length} message(s) from '
+        '${args.positional.first}');
+  } else {
+    throw _CliError('discover needs a dataset file or --adb. '
+        'Usage: sms-pattern-lab discover <dataset.json> | --adb');
+  }
+  stdout.writeln('');
+
+  final result = AnalysisPipeline(adapter: adapter).run(messages);
+  _printDiscoveryConsole(result.coverage, args, includeNoise: args.noFilter);
+  _enforceMinCoverage(args, result.coverage.overallCoveragePercent);
+}
+
+/// Discovery-first console: candidate new formats lead, then coverage.
+void _printDiscoveryConsole(CoverageReport r, _Args args,
+    {bool includeNoise = false}) {
+  final candidates = includeNoise
+      ? [...r.candidateNewFormats, ...r.noiseClusters]
+      : r.candidateNewFormats;
+
+  stdout.writeln('═══ Candidate new formats (unrecognized senders) ═══');
+  if (candidates.isEmpty) {
+    stdout.writeln('  none — every unmatched message is attributable to a '
+        'known bank.');
+  } else {
+    stdout.writeln('${candidates.length} distinct format(s) from senders no '
+        'parser recognizes — likely banks/formats with no parser yet:');
+    var i = 1;
+    for (final c in candidates.take(args.top)) {
+      stdout.writeln('  $i. [${c.priority} · regex:${c.regexReadiness}] '
+          'x${c.occurrences}');
+      stdout.writeln('     ${c.template}');
+      i++;
+    }
+    if (candidates.length > args.top) {
+      stdout.writeln('  … ${candidates.length - args.top} more (--top=N).');
+    }
+  }
+  if (!includeNoise && r.noiseClusters.isNotEmpty) {
+    stdout.writeln('  (${r.noiseClusters.length} non-transaction cluster(s) '
+        'hidden as noise — --no-filter to show)');
+  }
+  stdout.writeln('');
+  stdout.writeln('═══ Coverage (known banks) ═══');
+  stdout.writeln('Overall: ${r.overallCoveragePercent.toStringAsFixed(1)}% '
+      '(${r.matched}/${r.total})');
+  for (final p in r.parsers) {
+    stdout.writeln('  ${_pad(p.bankName, 28)} '
+        '${p.coveragePercent.toStringAsFixed(1).padLeft(6)}%  '
+        '(${p.matched}/${p.total})');
+  }
 }
 
 void _runStats(_Args args) {
@@ -247,7 +350,7 @@ void _runPull(_Args args) {
     stdout.writeln('');
     final adapter = _resolveAdapter(args);
     final result = AnalysisPipeline(adapter: adapter).run(messages);
-    _printCoverageConsole(result.coverage);
+    _printCoverageConsole(result.coverage, includeNoise: args.noFilter);
   } else {
     stdout.writeln('Next: sms-pattern-lab analyze $outPath');
   }
@@ -391,9 +494,21 @@ void _runDiff(_Args args) {
   stdout.writeln('   from: ${source.label}');
   stdout.writeln('');
 
+  // Logic drift (regex flags, cleanSmsText, sender normalization, heuristic) —
+  // only checkable when --from points at app source.
+  final logicDrift = _printLogicFidelity(source.appDir);
+  if (logicDrift) stdout.writeln('');
+
   if (!diff.isDirty) {
-    stdout.writeln('✓ Up to date — the vendored baseline matches the live '
-        'app. Coverage reports reflect current parser logic.');
+    if (logicDrift) {
+      stdout.writeln('Patterns are in sync, but the parser LOGIC drifted '
+          '(above). Re-verify the adapter mirrors it, then re-run '
+          'vendor_patterns to update the fidelity snapshot.');
+      exitCode = 3;
+    } else {
+      stdout.writeln('✓ Up to date — the vendored baseline matches the live '
+          'app. Coverage reports reflect current parser logic.');
+    }
     return;
   }
 
@@ -480,6 +595,37 @@ String _packageRoot() {
   return Directory.current.path;
 }
 
+/// Compare the live app's parsing-LOGIC signature against the vendored
+/// `fidelity.json`. Returns true if it drifted. Prints a status line either way
+/// (or nothing if the app source isn't available, e.g. `--against` a file).
+bool _printLogicFidelity(String appDir) {
+  final live = LogicFidelity.fromAppDir(appDir);
+  if (live == null) return false; // no app source → can't check
+  final vendorDir = TotalsParserAdapter.vendoredDir();
+  final f = vendorDir == null ? null : File('$vendorDir/fidelity.json');
+  if (f == null || !f.existsSync()) {
+    stdout.writeln('Parser logic      : no fidelity snapshot yet — run '
+        '`dart run tool/vendor_patterns.dart` to capture one.');
+    return false;
+  }
+  final json = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+  final expectedSig = (json['signature'] ?? '').toString();
+  final expectedProbes = (json['probes'] as Map?)
+          ?.map((k, v) => MapEntry(k.toString(), v.toString())) ??
+      const <String, String>{};
+  if (expectedSig == live.signature) {
+    stdout.writeln('Parser logic      : ✓ in sync · sig ${live.signature}');
+    return false;
+  }
+  stdout.writeln('⚠ Parser LOGIC drifted — vendored $expectedSig vs live '
+      '${live.signature}');
+  final drifted = live.driftedAgainst(expectedProbes);
+  stdout.writeln('  changed: ${drifted.join(', ')}');
+  stdout.writeln('  The lab mirrors this logic by hand (REFERENCE → Fidelity). '
+      'Re-verify the adapter still matches, then re-run vendor_patterns.');
+  return true;
+}
+
 /// Read provenance (rev/date) from the vendored SNAPSHOT.md, if present.
 String? _snapshotProvenance() {
   final dir = TotalsParserAdapter.vendoredDir();
@@ -546,20 +692,67 @@ void _refreshSnapshot(String appDir) {
     final src = File('$appDir/assets/$name');
     if (src.existsSync()) src.copySync('$vendor/$name');
   }
+  // Refresh the logic-fidelity snapshot too, so the next `diff` is in sync on
+  // both data and logic.
+  final fidelity = LogicFidelity.fromAppDir(appDir);
+  if (fidelity != null) {
+    File('$vendor/fidelity.json').writeAsStringSync(
+        '${const JsonEncoder.withIndent('  ').convert({
+              'signature': fidelity.signature,
+              'probes': fidelity.probeHashes,
+            })}\n');
+  }
 }
 
 String _truncate(String s, int max) =>
     s.length <= max ? s : '${s.substring(0, max - 1)}…';
 
+void _runCorpus(_Args args) {
+  if (args.positional.length < 2) {
+    throw _CliError('corpus needs at least two dataset files to merge.\n'
+        'Usage: sms-pattern-lab corpus a.json b.json [...] [--out=corpus.json]');
+  }
+  final sources = [for (final p in args.positional) DatasetLoader.load(p)];
+  final result = Corpus.merge(sources);
+
+  final outPath = args.out ?? 'build/corpus.json';
+  _writeFile(
+      outPath,
+      '${const JsonEncoder.withIndent('  ').convert([
+            for (final m in result.messages) m.toJson()
+          ])}\n');
+
+  stdout.writeln('Merged ${args.positional.length} source(s):');
+  for (var i = 0; i < args.positional.length; i++) {
+    stdout.writeln('  ${_pad(args.positional[i], 44)} '
+        '${result.perSourceCounts[i]}');
+  }
+  stdout.writeln('');
+  stdout.writeln('Total in  : ${result.totalInput}');
+  stdout.writeln('Unique    : ${result.uniqueCount} '
+      '(${result.duplicatesRemoved} duplicate(s) removed)');
+  stdout.writeln('Dataset id: ${result.datasetId}');
+  stdout.writeln('Wrote corpus → $outPath');
+
+  if (args.analyzeAfter) {
+    stdout.writeln('');
+    final adapter = _resolveAdapter(args);
+    final cov = AnalysisPipeline(adapter: adapter).run(result.messages).coverage;
+    _printCoverageConsole(cov, includeNoise: args.noFilter);
+  } else {
+    stdout.writeln('Next: sms-pattern-lab analyze $outPath');
+  }
+}
+
 void _runCompare() {
-  stdout.writeln('`compare` is reserved for the Version 4 roadmap '
+  stdout.writeln('`compare` is reserved for the Version 5 roadmap '
       '(historical coverage comparison / regression detection).');
-  stdout.writeln('It is not implemented in this Version 1 release.');
+  stdout.writeln('It is not implemented in this release.');
 }
 
 // --- console rendering -----------------------------------------------------
 
-void _printCoverageConsole(CoverageReport r) {
+void _printCoverageConsole(CoverageReport r, {bool includeNoise = false}) {
   stdout.writeln('Overall coverage: '
       '${r.overallCoveragePercent.toStringAsFixed(1)}% '
       '(${r.matched}/${r.total})');
@@ -571,14 +764,37 @@ void _printCoverageConsole(CoverageReport r) {
         '(${p.matched}/${p.total})');
   }
 
-  if (r.unmatchedClusters.isNotEmpty) {
+  final attributed = r.attributedClusters;
+  if (attributed.isNotEmpty) {
     stdout.writeln('');
-    stdout.writeln('Top missing templates:');
-    for (final c in r.unmatchedClusters.take(5)) {
-      stdout.writeln('  [${c.priority}] x${c.occurrences}  '
-          '${c.likelyBankName ?? 'Unknown'}');
+    stdout.writeln('Top missing templates (known banks):');
+    for (final c in attributed.take(5)) {
+      stdout.writeln('  [${c.priority} · regex:${c.regexReadiness}] '
+          'x${c.occurrences}  ${c.likelyBankName ?? 'Unknown'}');
       stdout.writeln('      ${c.template}');
     }
+  }
+
+  // Discovery signal: formats from senders no parser recognizes.
+  final candidates = includeNoise
+      ? [...r.candidateNewFormats, ...r.noiseClusters]
+      : r.candidateNewFormats;
+  if (candidates.isNotEmpty) {
+    stdout.writeln('');
+    stdout.writeln('⚑ Candidate new formats (unrecognized sender) — '
+        '${candidates.length} distinct:');
+    for (final c in candidates.take(5)) {
+      stdout.writeln('  [${c.priority} · regex:${c.regexReadiness}] '
+          'x${c.occurrences}');
+      stdout.writeln('      ${c.template}');
+    }
+    stdout.writeln('  → likely a format/bank with no parser yet. '
+        '(Pull with --all to surface more.)');
+  }
+  if (!includeNoise && r.noiseClusters.isNotEmpty) {
+    stdout.writeln('');
+    stdout.writeln('  (${r.noiseClusters.length} non-transaction cluster(s) '
+        'hidden as noise — --no-filter to show)');
   }
 }
 
@@ -626,13 +842,16 @@ COMMANDS
   report  [dataset]    Generate the Markdown coverage report file
   stats   [dataset]    Print dataset-level statistics
   templates [dataset]  List prioritized unmatched template clusters
+  discover [dataset]   Breadth-first discovery (ALL senders); leads with
+                       candidate new formats. Use --adb to pull the whole inbox
   pull                 Pull SMS from a connected device (adb) into a dataset
   devices              List attached adb devices
   baseline             Show the parser baseline reports are measured against
                        (add --record to append it to the history ledger)
   diff                 Check the vendored baseline against the live app (drift)
   history              Show the recorded baseline-signature history
-  compare              (Roadmap V4) historical coverage comparison
+  corpus <a> <b>...     Merge + dedup several datasets into one (with a dataset id)
+  compare              (Roadmap V5) historical coverage comparison
   help                 Show this help
   version              Print version
 
@@ -654,12 +873,19 @@ OPTIONS
   --record             `baseline`: append the current baseline to history
   --note=<text>        `baseline`/`diff`: note stored with the recorded entry
   --history=<path>     History ledger file (default: baseline_history.json)
+  --no-filter          Keep non-transaction messages (OTPs, promos, notices);
+                       default drops them as noise before analysis
+  --min-coverage=<n>   `analyze`: exit non-zero (4) if coverage < n% (CI gate)
   --out=<path>         Output path (report, or dataset for `pull`)
   --top=<n>            Max clusters to show/emit  (default: 25)
   --json               Emit machine-readable JSON (stats/templates)
 
+EXIT CODES
+  0 ok · 1 error · 3 baseline drift (`diff`) · 4 below --min-coverage (`analyze`)
+
 EXAMPLES
   sms-pattern-lab analyze example/cbe_sms.json
+  sms-pattern-lab discover --adb              # all senders, discovery-first
   sms-pattern-lab analyze example/cbe_sms.json --html        # HTML report
   sms-pattern-lab pull --analyze              # pull CBE SMS from phone + analyze
   sms-pattern-lab pull --all --out=all.json   # dump every SMS to a dataset
@@ -687,12 +913,14 @@ class _Args {
   final bool html;
   final bool refresh;
   final bool record;
+  final bool noFilter;
   final String? note;
   final String? history;
   final String? device;
   final String adbPath;
   final String? from;
   final String? against;
+  final double? minCoverage;
 
   /// Sender codes to keep when pulling from a device. CBE-only for now, per the
   /// current focus; override with --bank=CODE (repeatable) or --all.
@@ -712,12 +940,14 @@ class _Args {
     required this.html,
     required this.refresh,
     required this.record,
+    required this.noFilter,
     required this.note,
     required this.history,
     required this.device,
     required this.adbPath,
     required this.from,
     required this.against,
+    required this.minCoverage,
     required this.banks,
   });
 
@@ -737,12 +967,14 @@ class _Args {
     var html = false;
     var refresh = false;
     var record = false;
+    var noFilter = false;
     String? note;
     String? history;
     String? device;
     var adbPath = 'adb';
     String? from;
     String? against;
+    double? minCoverage;
     final bankCodes = <String>[];
 
     for (final arg in argv) {
@@ -781,6 +1013,9 @@ class _Args {
           case 'refresh':
             refresh = true;
             break;
+          case 'no-filter':
+            noFilter = true;
+            break;
           case 'record':
             record = true;
             break;
@@ -795,6 +1030,9 @@ class _Args {
             break;
           case 'against':
             against = value;
+            break;
+          case 'min-coverage':
+            minCoverage = double.tryParse(value ?? '');
             break;
           case 'device':
             device = value;
@@ -832,12 +1070,14 @@ class _Args {
       html: html,
       refresh: refresh,
       record: record,
+      noFilter: noFilter,
       note: note,
       history: history,
       device: device,
       adbPath: adbPath,
       from: from,
       against: against,
+      minCoverage: minCoverage,
       banks: bankCodes,
     );
   }

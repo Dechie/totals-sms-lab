@@ -34,4 +34,33 @@ void main() {
   test('whitespace is collapsed', () {
     expect(n.normalize('a    b\n\tc'), equals('a b c'));
   });
+
+  test('abstracts parenthesized counterparty names (so they stop fragmenting)',
+      () {
+    final a = n.normalize(
+        'transferred ETB 420.00 to account 1**6548 (Abdurezak Mehabuba Bushira).');
+    final b = n.normalize(
+        'transferred ETB 170.00 to account 1**0315 (Tirhas Getachew Chaka).');
+    expect(a, equals(b));
+    expect(a, contains('(<NAME>)'));
+  });
+
+  test('does NOT mistake (15%) / (5%) for a name', () {
+    final out = n.normalize('VAT(15%) and Disaster Recovery(5%) applied');
+    expect(out, isNot(contains('<NAME>')));
+  });
+
+  test('abstracts recipient names between to/from and "on"', () {
+    final a = n.normalize('You have transfered ETB 255.00 to Demis Zeleke on 2026-06-15');
+    final b = n.normalize('You have transfered ETB 290.00 to Getu Gizaw on 2026-06-02');
+    expect(a, equals(b));
+    expect(a, contains('to <NAME> on'));
+  });
+
+  test('abstracts merchant in POS messages', () {
+    final a = n.normalize('POS Purchase of ETB 350.00 at SUPERMARKET on 2024-06-10');
+    final b = n.normalize('POS Purchase of ETB 1,299.99 at ELECTRONICS on 2024-06-11');
+    expect(a, equals(b));
+    expect(a, contains('<MERCHANT>'));
+  });
 }

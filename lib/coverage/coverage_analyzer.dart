@@ -3,6 +3,7 @@ import '../models/parse_result.dart';
 import '../models/template_cluster.dart';
 import '../parser_adapter/parser_adapter.dart';
 import '../clustering/exact_clusterer.dart';
+import '../filtering/transaction_heuristic.dart';
 
 /// Computes overall and per-parser coverage, and attaches each bank's missing
 /// templates so the report can point straight at the highest-impact gaps.
@@ -57,12 +58,35 @@ class CoverageAnalyzer {
         return byCov != 0 ? byCov : b.unmatched.compareTo(a.unmatched);
       });
 
+    // Discovery signal: unmatched clusters from senders no parser recognizes
+    // (already priority-sorted, since `clusters` is). Split into transaction-
+    // like *candidates* and non-transaction *noise* (OTPs/promos/notices) so
+    // the candidate stream stays clean. This classification does NOT affect
+    // coverage — every message is still counted above.
+    final unattributedClusters =
+        clusters.where((c) => c.likelyBankId == null);
+    final candidateNewFormats = <TemplateCluster>[];
+    final noiseClusters = <TemplateCluster>[];
+    for (final c in unattributedClusters) {
+      (_looksTransactional(c) ? candidateNewFormats : noiseClusters).add(c);
+    }
+
     return CoverageReport(
       total: total,
       matched: matched,
       unattributed: unattributed,
       parsers: parsers,
       unmatchedClusters: clusters,
+      candidateNewFormats: candidateNewFormats,
+      noiseClusters: noiseClusters,
     );
+  }
+
+  /// Classify a cluster as transaction-like using a representative raw example
+  /// (retains amounts/keywords that normalization would mask). Mirrors the
+  /// app's `_looksLikeTransactionMessage` via [TransactionHeuristic].
+  static bool _looksTransactional(TemplateCluster c) {
+    final sample = c.examples.isNotEmpty ? c.examples.first : c.template;
+    return TransactionHeuristic.looksLikeTransaction(sample);
   }
 }

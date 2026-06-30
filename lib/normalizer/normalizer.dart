@@ -19,6 +19,22 @@ class Normalizer {
         RegExp(r'(?<=(?:id=|Receipt/|BranchReceipt/))[A-Z0-9&]{4,}',
             caseSensitive: false)),
 
+    // Free-text entity fields — abstract them so a category isn't fragmented by
+    // a person/merchant name, and so the skeleton maps cleanly onto a capture
+    // group (see INSIGHTS.md — "actionable patterns").
+    //
+    // Parenthesized counterparty names, e.g. "(Abdurezak Mehabuba Bushira)".
+    // Letters/spaces/punctuation only, so "(15%)" / "(5%)" (VAT etc.) are safe.
+    _Rule('(<NAME>)', RegExp(r"\([A-Z][A-Za-z .'-]+\)")),
+    // Recipient/sender names: "... to Demis Zeleke on ..." / "from Foo Bar on".
+    // Title-cased run anchored between to/from and " on" (won't touch
+    // "to account ..." since "account" is lower-case).
+    _Rule('<NAME>',
+        RegExp(r"(?<=\b(?:to|from)\s)[A-Z][a-z]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}(?=\s+on\b)")),
+    // Merchant in POS messages: "... at SUPERMARKET on ...".
+    _Rule('<MERCHANT>',
+        RegExp(r"(?<=\bat\s)[A-Za-z][A-Za-z0-9 &'.-]*?(?=\s+on\b)")),
+
     // Dates: 2024-01-31, 31/01/2024, 31-Jan-2024.
     _Rule('<DATE>', RegExp(r'\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b')),
     _Rule('<DATE>', RegExp(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b')),
