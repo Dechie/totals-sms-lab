@@ -1,9 +1,18 @@
-# Field Shapes — plan (short)
+# Field Shapes — ✅ SHIPPED
 
-> Status: **planned**. Emit, alongside each normalized template, a per-field
+> Status: **shipped**. Emit, alongside each normalized template, a per-field
 > *shape profile* (quasi-regex) so a maintainer can author capture-groups
 > **without ever seeing the real value**. Privacy + regex-readiness in one move.
 > See INSIGHTS.md (actionable patterns) and ROADMAP_NOTES §6.1 (regex suggestion).
+>
+> **Where it lives:** `lib/annotation/shape_profile.dart` (`ShapeProfiler` +
+> `FieldShape`). The `Normalizer` now captures each stripped span
+> (`normalizeWithSpans`); `ExactClusterer` aggregates spans per cluster (capped,
+> local-only); `TemplateCluster.shapeProfile` / `TemplateFamily.shapeProfile()`
+> generalize them (the family unions members' spans first). Surfaced via the
+> `export` command (`lib/export/enrichment_export.dart`). Raw spans are
+> **local-only and never exported**. A greeting-name strip ("Dear <NAME>") was
+> added to the normalizer so the account holder's own name can't leak.
 
 ## Idea
 For every placeholder the normalizer inserts (`<AMOUNT>`, `<NAME>`, …), also

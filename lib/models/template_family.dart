@@ -1,3 +1,4 @@
+import '../annotation/shape_profile.dart';
 import 'template_cluster.dart';
 
 /// A group of exact-template [TemplateCluster]s that are the *same logical
@@ -71,4 +72,18 @@ class TemplateFamily {
   /// shown as drill-down when a family has more than one member.
   List<String> get variantTemplates =>
       [for (final m in members.skip(1)) m.template];
+
+  /// Privacy-safe per-field shape for the whole family. Generalized over the
+  /// **union** of every member's raw spans (not by merging per-cluster
+  /// regexes), so the grammar covers the full spread of values in the category
+  /// — the correct unit for export and the V5 regex suggester (FIELD_SHAPES.md).
+  Map<String, FieldShape> shapeProfile() {
+    final merged = <String, List<String>>{};
+    for (final m in members) {
+      m.fieldSpans.forEach((field, values) {
+        (merged[field] ??= <String>[]).addAll(values);
+      });
+    }
+    return ShapeProfiler.profileAll(merged);
+  }
 }

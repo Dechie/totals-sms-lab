@@ -125,7 +125,13 @@ already shipped in V1.
 
 Also carry the enrichment fields (`actionVerb`, `shapeProfile`) on the family —
 they feed grouping, labels, export, and the V5 regex suggester
-(ENRICHMENT_FIELDS.md / FIELD_SHAPES.md).
+(ENRICHMENT_FIELDS.md / FIELD_SHAPES.md). **✅ Both shipped:** `actionVerb`/
+`direction` (V2 step 1) and `shapeProfile` (`lib/annotation/shape_profile.dart`),
+carried on `TemplateCluster`/`TemplateFamily` and emitted by the **`export`**
+command as a privacy-safe artifact (`{normalizedText, actionVerb, direction,
+shapeProfile, count, bank, matched}`; raw spans are local-only, greeting names
+stripped, `--preview` to review). This is the contributor data-collection path
+that feeds V3 tuning and the §9.2 corpus.
 
 **Why it matters for the founding insight:** large-scale discovery only pays off
 if the long tail of never-covered variants collapses into a short, rankable list
@@ -296,7 +302,11 @@ compare foundation for V5). `BaselineHistory` records parser *baselines*, not
 
 ### 6.1 Regex suggestion engine  (biggest payoff; depends on V2 engines + V3 tuning)
 The `Normalizer` is almost the **inverse** of a regex generator: its placeholders
-map to named capture groups.
+map to named capture groups. **Prerequisite now ready:** `shapeProfile`
+(`lib/annotation/shape_profile.dart`) already derives a per-field generalized
+regex from real spans — the capture-group *bodies* the suggester needs. The
+remaining V5 work is composing `RegExp.escape`d literal text between placeholders
+with these group bodies and validating against the family's members.
 - Build a placeholder→group table, e.g. `<AMOUNT>` → `(?<amount>[\d,.]+)`,
   `<ACCOUNT>` → `(?<account>[\d*]+)`, `<DATE>` → `(?<date>...)`, etc. (mirror the
   groups Totals' `PatternParser` actually reads: amount, balance, account,

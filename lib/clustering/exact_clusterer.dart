@@ -24,9 +24,10 @@ class ExactClusterer {
 
     final byTemplate = <String, _Bucket>{};
     for (final r in unmatched) {
-      final template = _normalizer.normalize(r.message.body);
-      final bucket = byTemplate.putIfAbsent(template, () => _Bucket(template));
-      bucket.add(r, maxExamples);
+      final norm = _normalizer.normalizeWithSpans(r.message.body);
+      final bucket =
+          byTemplate.putIfAbsent(norm.template, () => _Bucket(norm.template));
+      bucket.add(r, norm.spans, maxExamples);
     }
 
     final clusters = byTemplate.values
@@ -49,13 +50,25 @@ class _Bucket {
   final Map<int, int> bankVotes = {}; // bankId -> count
   final Map<int, String> bankNames = {};
 
+  // Raw stripped spans per field, capped so a huge cluster can't grow unbounded
+  // (a few hundred samples is far more than enough to generalize a shape).
+  static const _maxSpansPerField = 500;
+  final Map<String, List<String>> fieldSpans = {};
+
   _Bucket(this.template);
 
-  void add(ParseResult r, int maxExamples) {
+  void add(ParseResult r, Map<String, List<String>> spans, int maxExamples) {
     count++;
     if (examples.length < maxExamples) {
       examples.add(r.message.body.trim());
     }
+    spans.forEach((field, values) {
+      final acc = fieldSpans.putIfAbsent(field, () => <String>[]);
+      for (final v in values) {
+        if (acc.length >= _maxSpansPerField) break;
+        acc.add(v);
+      }
+    });
     final id = r.bankId;
     if (id != null) {
       bankVotes[id] = (bankVotes[id] ?? 0) + 1;
@@ -78,6 +91,7 @@ class _Bucket {
       examples: List.unmodifiable(examples),
       likelyBankId: likelyBankId,
       likelyBankName: likelyBankId == null ? null : bankNames[likelyBankId],
+      fieldSpans: fieldSpans,
     );
   }
 }

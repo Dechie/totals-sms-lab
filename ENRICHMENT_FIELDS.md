@@ -1,9 +1,15 @@
-# Enrichment fields — `actionVerb` + `shapeProfile` (plan)
+# Enrichment fields — `actionVerb` + `shapeProfile` — ✅ SHIPPED
 
-> Status: **planned**. Two additive per-template annotations that make internal
+> Status: **shipped**. Two additive per-template annotations that make internal
 > grouping cheaper/more deterministic and give devs regex-ready, privacy-safe
 > structure. Neither replaces the normalized text; both sit beside it.
 > See action_words.txt, FIELD_SHAPES.md, INSIGHTS.md, ROADMAP_NOTES §3/§6.1.
+>
+> **Where it lives:** `actionVerb`/`direction` via `lib/annotation/annotator.dart`
+> + `action_lexicon.dart` (V2 step 1); `shapeProfile` via
+> `lib/annotation/shape_profile.dart` (see FIELD_SHAPES.md). Both are carried on
+> `TemplateCluster`/`TemplateFamily` and emitted by the `export` command
+> (`lib/export/enrichment_export.dart`, `--preview` to review before sharing).
 
 Each template/family carries three things:
 - **normalizedText** — the skeleton (`Dear <NAME> transferred <AMOUNT> to <NAME>`)

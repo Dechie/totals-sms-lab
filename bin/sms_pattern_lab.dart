@@ -7,6 +7,7 @@ import 'package:sms_pattern_lab/baseline/baseline_history.dart';
 import 'package:sms_pattern_lab/baseline/logic_fidelity.dart';
 import 'package:sms_pattern_lab/baseline/parser_baseline.dart';
 import 'package:sms_pattern_lab/corpus/corpus.dart';
+import 'package:sms_pattern_lab/export/enrichment_export.dart';
 import 'package:sms_pattern_lab/models/coverage_report.dart';
 import 'package:sms_pattern_lab/models/sms_message.dart';
 import 'package:sms_pattern_lab/models/template_family.dart';
@@ -59,6 +60,9 @@ void main(List<String> argv) {
         break;
       case 'corpus':
         _runCorpus(args);
+        break;
+      case 'export':
+        _runExport(args);
         break;
       case 'compare':
         _runCompare();
@@ -116,6 +120,29 @@ SimilarityGrouper _grouper(_Args args) {
           'Warning: unknown --group=${args.grouping}; using identity.');
       return IdentityGrouper();
   }
+}
+
+/// `export` — emit the privacy-safe enrichment artifact (normalized text +
+/// action verb + shape profile per gap category) for a maintainer to collect
+/// across contributors. Writes JSON to --out; `--preview` also prints a
+/// human-readable summary so a contributor can review before sending.
+void _runExport(_Args args) {
+  final result = _analyze(args);
+  final doc =
+      EnrichmentExport.build(result.coverage, parserName: result.parserName);
+
+  if (args.preview) {
+    stdout.writeln('');
+    stdout.write(EnrichmentExport.preview(doc));
+  }
+
+  final outPath = args.out ?? 'build/enrichment_export.json';
+  final file = File(outPath);
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert(doc)}\n');
+  stdout.writeln('\n📦 Enrichment export written to $outPath '
+      '(${doc['unitCount']} unit(s), no raw values).');
 }
 
 /// Load the dataset for an analysis command from either `--adb` (live device)
@@ -884,6 +911,9 @@ COMMANDS
   diff                 Check the vendored baseline against the live app (drift)
   history              Show the recorded baseline-signature history
   corpus <a> <b>...     Merge + dedup several datasets into one (with a dataset id)
+  export [dataset]     Emit the privacy-safe enrichment artifact (normalized
+                       text + action verb + shape profile per gap; no raw
+                       values) for contributors to share. Add --preview to review
   compare              (Roadmap V5) historical coverage comparison
   help                 Show this help
   version              Print version
@@ -913,7 +943,9 @@ OPTIONS
                        (action-verb + direction, e.g. "Outgoing transfers") |
                        levenshtein (verb buckets refined by wording similarity)
   --similarity=<r>     levenshtein merge threshold, 0..1  (default: 0.9)
-  --out=<path>         Output path (report, or dataset for `pull`)
+  --preview            `export`: also print a human-readable summary of exactly
+                       what would be shared, before it leaves the device
+  --out=<path>         Output path (report, dataset for `pull`, or export JSON)
   --top=<n>            Max clusters to show/emit  (default: 25)
   --json               Emit machine-readable JSON (stats/templates)
 
@@ -925,6 +957,7 @@ EXAMPLES
   sms-pattern-lab discover --adb              # all senders, discovery-first
   sms-pattern-lab analyze example/cbe_sms.json --html        # HTML report
   sms-pattern-lab analyze example/cbe_sms.json --group=verb  # semantic families
+  sms-pattern-lab export example/cbe_sms.json --preview      # privacy-safe share
   sms-pattern-lab pull --analyze              # pull CBE SMS from phone + analyze
   sms-pattern-lab pull --all --out=all.json   # dump every SMS to a dataset
   sms-pattern-lab analyze --adb --html        # fetch live, write HTML report
@@ -952,6 +985,7 @@ class _Args {
   final bool refresh;
   final bool record;
   final bool noFilter;
+  final bool preview;
   final String? note;
   final String? history;
   final String? device;
@@ -987,6 +1021,7 @@ class _Args {
     required this.refresh,
     required this.record,
     required this.noFilter,
+    required this.preview,
     required this.note,
     required this.history,
     required this.device,
@@ -1016,6 +1051,7 @@ class _Args {
     var refresh = false;
     var record = false;
     var noFilter = false;
+    var preview = false;
     String? note;
     String? history;
     String? device;
@@ -1065,6 +1101,9 @@ class _Args {
             break;
           case 'no-filter':
             noFilter = true;
+            break;
+          case 'preview':
+            preview = true;
             break;
           case 'record':
             record = true;
@@ -1127,6 +1166,7 @@ class _Args {
       refresh: refresh,
       record: record,
       noFilter: noFilter,
+      preview: preview,
       note: note,
       history: history,
       device: device,

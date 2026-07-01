@@ -23,6 +23,17 @@ class Normalizer {
     // a person/merchant name, and so the skeleton maps cleanly onto a capture
     // group (see INSIGHTS.md — "actionable patterns").
     //
+    // Greeting name: "Dear <Name…>" / "Dear Mr <Name>" / "Dear Customer". This
+    // is usually the *account holder's own name* — the main re-identification
+    // risk in an exported skeleton — so strip it first. Match a greedy run of
+    // Title-case words (optionally a title) right after "Dear"; it stops at the
+    // first lower-case word ("have"/"your"/"account") or punctuation. Erring
+    // toward over-stripping a capitalized sentence word is privacy-safe.
+    _Rule(
+        '<NAME>',
+        RegExp(
+            r"(?<=\bDear\s)(?:(?:Mr|Mrs|Ms|Dr)\.?\s+)?[A-Z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)*")),
+
     // Parenthesized counterparty names, e.g. "(Abdurezak Mehabuba Bushira)".
     // Letters/spaces/punctuation only, so "(15%)" / "(5%)" (VAT etc.) are safe.
     _Rule('(<NAME>)', RegExp(r"\([A-Z][A-Za-z .'-]+\)")),
@@ -86,20 +97,50 @@ class Normalizer {
   ];
 
   /// Returns the normalized template for [body].
-  String normalize(String body) {
+  String normalize(String body) => normalizeWithSpans(body).template;
+
+  /// Like [normalize], but also returns the raw text each placeholder replaced,
+  /// grouped by field name (`AMOUNT`, `NAME`, …). These spans are what the
+  /// `ShapeProfiler` generalizes into a privacy-safe per-field regex
+  /// (FIELD_SHAPES.md). The [NormalizationResult.template] is byte-identical to
+  /// [normalize]'s output, so coverage/clustering are unaffected.
+  ///
+  /// Rules run in order and each match is replaced by a placeholder before the
+  /// next rule runs, so every raw span is captured exactly once, by the rule
+  /// that claimed it (later rules only see placeholders, never raw values).
+  NormalizationResult normalizeWithSpans(String body) {
+    final spans = <String, List<String>>{};
     var text = body;
     for (final rule in _rules) {
-      text = text.replaceAll(rule.regex, rule.placeholder);
+      text = text.replaceAllMapped(rule.regex, (m) {
+        (spans[rule.field] ??= <String>[]).add(m[0]!);
+        return rule.placeholder;
+      });
     }
-    return _collapseWhitespace(text);
+    return NormalizationResult(_collapseWhitespace(text), spans);
   }
 
   String _collapseWhitespace(String s) =>
       s.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+/// A normalized template plus the raw spans each placeholder replaced (keyed by
+/// field name, no angle brackets). The spans are for *local* shape analysis
+/// only — never exported (they can carry real names/values); the exported
+/// artifact is the generalized regex the `ShapeProfiler` derives from them.
+class NormalizationResult {
+  final String template;
+  final Map<String, List<String>> spans;
+  const NormalizationResult(this.template, this.spans);
+}
+
 class _Rule {
   final String placeholder;
   final RegExp regex;
-  const _Rule(this.placeholder, this.regex);
+
+  /// Field name extracted from the placeholder (`(<NAME>)` → `NAME`).
+  final String field;
+
+  _Rule(this.placeholder, this.regex)
+      : field = RegExp(r'<([A-Z]+)>').firstMatch(placeholder)!.group(1)!;
 }

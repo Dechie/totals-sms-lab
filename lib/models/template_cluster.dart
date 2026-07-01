@@ -1,3 +1,5 @@
+import '../annotation/shape_profile.dart';
+
 /// Transaction direction inferred from a template's action verb.
 ///
 /// `incoming` (money in: credited/received/deposited), `outgoing` (money out:
@@ -43,6 +45,12 @@ class TemplateCluster {
   /// is `null`.
   TxDirection? direction;
 
+  /// Raw values each placeholder replaced, keyed by field name (`AMOUNT`, …),
+  /// aggregated across this cluster's messages. **Local-only** — these can hold
+  /// real names/amounts, so they are never exported; the `ShapeProfiler`
+  /// generalizes them into a privacy-safe regex (see [shapeProfile]).
+  final Map<String, List<String>> fieldSpans;
+
   TemplateCluster({
     required this.template,
     required this.occurrences,
@@ -52,7 +60,9 @@ class TemplateCluster {
     this.similarityGroup,
     this.actionVerb,
     this.direction,
-  }) : examples = examples ?? <String>[];
+    Map<String, List<String>>? fieldSpans,
+  })  : examples = examples ?? <String>[],
+        fieldSpans = fieldSpans ?? const {};
 
   /// Priority bucket derived from occurrence count.
   /// Frequent unmatched templates are the cheapest, highest-impact wins.
@@ -84,6 +94,11 @@ class TemplateCluster {
   String get priority => priorityFor(occurrences);
 
   int get priorityRank => priorityRankFor(priority);
+
+  /// Privacy-safe per-field shape (generalized regex) derived from [fieldSpans].
+  /// Empty when no spans were captured (e.g. a template with no placeholders).
+  Map<String, FieldShape> get shapeProfile =>
+      ShapeProfiler.profileAll(fieldSpans);
 
   // --- regex-readiness ------------------------------------------------------
   //
