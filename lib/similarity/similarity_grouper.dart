@@ -1,29 +1,27 @@
 import '../models/template_cluster.dart';
+import '../models/template_family.dart';
 
-/// Groups exact clusters into broader *template families* (e.g. "Outgoing
-/// Transfers") whose members differ only in wording.
+/// Groups exact [TemplateCluster]s into broader [TemplateFamily]s (e.g.
+/// "Outgoing Transfers") whose members are the same logical shape despite
+/// wording differences.
 ///
-/// ⚑ V2/V3 implementers: read ROADMAP_NOTES.md before changing this contract.
-/// Today `group()` only *tags* clusters (sets `similarityGroup`). Merging into
-/// families requires a `TemplateFamily` type and a pipeline/report change —
-/// the notes spell out the exact shape.
+/// ⚑ V2/V3 implementers: read ROADMAP_NOTES.md / ALGORITHMS.md before adding a
+/// grouper. The contract returns *families*: to merge, put related clusters in
+/// the same `TemplateFamily`. Always block by `likelyBankId` — never merge
+/// clusters from different banks.
 ///
 /// Roadmap:
 ///   * V2 — Levenshtein distance to merge near-identical templates.
 ///   * V3 — TF-IDF + cosine similarity for semantic families.
-///
-/// V1 ships the interface and an identity grouper so the pipeline and reports
-/// already speak in terms of families; the smarter groupers slot in behind
-/// this same contract without touching callers.
 abstract class SimilarityGrouper {
-  /// Assigns a `similarityGroup` label to each cluster (mutating in place is
-  /// avoided; returns the same list for chaining).
-  List<TemplateCluster> group(List<TemplateCluster> clusters);
+  /// Partition [clusters] into families. Every cluster ends up in exactly one.
+  List<TemplateFamily> group(List<TemplateCluster> clusters);
 }
 
-/// V1 default: every cluster is its own family. No merging, fully
-/// deterministic, zero cost.
+/// V1/default: every cluster is its own family. No merging, fully
+/// deterministic, zero cost — preserves pre-V2 behavior.
 class IdentityGrouper implements SimilarityGrouper {
   @override
-  List<TemplateCluster> group(List<TemplateCluster> clusters) => clusters;
+  List<TemplateFamily> group(List<TemplateCluster> clusters) =>
+      [for (final c in clusters) TemplateFamily([c])];
 }

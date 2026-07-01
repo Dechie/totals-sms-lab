@@ -1,4 +1,5 @@
 import 'template_cluster.dart';
+import 'template_family.dart';
 
 /// Coverage figures for a single bank/parser.
 class ParserCoverage {
@@ -54,6 +55,13 @@ class CoverageReport {
   /// with `--no-filter`. Coverage still counts these messages.
   final List<TemplateCluster> noiseClusters;
 
+  /// Attributed gaps grouped into families (the grouper's output over
+  /// [attributedClusters]). V1's IdentityGrouper = one family per cluster.
+  final List<TemplateFamily> attributedFamilies;
+
+  /// Candidate-new-format clusters grouped into families.
+  final List<TemplateFamily> candidateFamilies;
+
   const CoverageReport({
     required this.total,
     required this.matched,
@@ -62,6 +70,8 @@ class CoverageReport {
     required this.unmatchedClusters,
     this.candidateNewFormats = const [],
     this.noiseClusters = const [],
+    this.attributedFamilies = const [],
+    this.candidateFamilies = const [],
   });
 
   int get unmatched => total - matched;

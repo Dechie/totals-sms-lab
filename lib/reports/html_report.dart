@@ -1,5 +1,5 @@
 import '../models/coverage_report.dart';
-import '../models/template_cluster.dart';
+import '../models/template_family.dart';
 import 'svg_charts.dart';
 
 /// Renders a [CoverageReport] into a **single, self-contained HTML file**:
@@ -63,8 +63,8 @@ class HtmlReport {
     _stat(b, 'Distinct unmatched templates',
         '${report.unmatchedClusters.length}');
     _stat(b, 'Candidate new formats',
-        '${report.candidateNewFormats.length}',
-        color: report.candidateNewFormats.isEmpty ? null : '#ea580c');
+        '${report.candidateFamilies.length}',
+        color: report.candidateFamilies.isEmpty ? null : '#ea580c');
     if (report.noiseClusters.isNotEmpty) {
       _stat(b, 'Noise (filtered)', '${report.noiseClusters.length}');
     }
@@ -128,10 +128,12 @@ class HtmlReport {
   /// Discovery-first: formats from unrecognized senders (likely whole banks
   /// with no parser yet) — the "unknown unknowns" the tool exists to surface.
   void _candidateNewFormats(StringBuffer b) {
-    final clusters = includeNoise
-        ? [...report.candidateNewFormats, ...report.noiseClusters]
-        : report.candidateNewFormats;
-    if (clusters.isEmpty) return;
+    final families = [
+      ...report.candidateFamilies,
+      if (includeNoise)
+        for (final c in report.noiseClusters) TemplateFamily([c]),
+    ];
+    if (families.isEmpty) return;
     b.writeln('<section>');
     b.writeln('<h2>Candidate new formats <span class="muted">'
         '(unrecognized sender)</span></h2>');
@@ -141,14 +143,14 @@ class HtmlReport {
         '${!includeNoise && report.noiseClusters.isNotEmpty ? ' '
             '${report.noiseClusters.length} non-transaction cluster(s) filtered '
             'as noise — use --no-filter to include.' : ''}</p>');
-    final shown = clusters.take(topClusters).toList();
-    if (clusters.length > shown.length) {
+    final shown = families.take(topClusters).toList();
+    if (families.length > shown.length) {
       b.writeln('<p class="muted">Showing top ${shown.length} of '
-          '${clusters.length}.</p>');
+          '${families.length}.</p>');
     }
     var i = 1;
-    for (final c in shown) {
-      _cluster(b, i++, c);
+    for (final f in shown) {
+      _family(b, i++, f);
     }
     b.writeln('</section>');
   }
@@ -157,46 +159,58 @@ class HtmlReport {
     b.writeln('<section>');
     b.writeln('<h2>Unmatched pattern reports <span class="muted">'
         '(known banks)</span></h2>');
-    final clusters = report.attributedClusters;
-    if (clusters.isEmpty) {
+    final families = report.attributedFamilies;
+    if (families.isEmpty) {
       b.writeln('<p class="ok">🎉 No unmatched messages from recognized banks '
           '— every configured parser is fully covered for this dataset.</p>');
       b.writeln('</section>');
       return;
     }
 
-    final shown = clusters.take(topClusters).toList();
-    if (clusters.length > shown.length) {
+    final shown = families.take(topClusters).toList();
+    if (families.length > shown.length) {
       b.writeln('<p class="muted">Showing top ${shown.length} of '
-          '${clusters.length} unmatched clusters (ranked by priority).</p>');
+          '${families.length} unmatched families (ranked by priority).</p>');
     }
 
     var i = 1;
-    for (final c in shown) {
-      _cluster(b, i++, c);
+    for (final f in shown) {
+      _family(b, i++, f);
     }
     b.writeln('</section>');
   }
 
-  void _cluster(StringBuffer b, int index, TemplateCluster c) {
+  void _family(StringBuffer b, int index, TemplateFamily f) {
     b.writeln('<article class="cluster">');
     b.writeln('<div class="cluster-head">');
     b.writeln('<span class="badge" style="background:'
-        '${SvgCharts.priorityColor(c.priority)}">${_esc(c.priority)}</span>');
-    b.writeln('<span class="count">×${c.occurrences}</span>');
+        '${SvgCharts.priorityColor(f.priority)}">${_esc(f.priority)}</span>');
+    b.writeln('<span class="count">×${f.totalOccurrences}</span>');
     b.writeln('<span class="badge" style="background:'
-        '${_readinessColor(c.regexReadiness)}" title="how anchorable this '
-        'skeleton is for one regex">regex: ${_esc(c.regexReadiness)}</span>');
+        '${_readinessColor(f.regexReadiness)}" title="how anchorable this '
+        'skeleton is for one regex">regex: ${_esc(f.regexReadiness)}</span>');
+    if (f.memberCount > 1) {
+      b.writeln('<span class="muted">${f.memberCount} variants</span>');
+    }
     b.writeln('<span class="muted">'
-        '${_esc(c.likelyBankName ?? 'Unknown parser')}'
-        '${c.similarityGroup == null ? '' : ' · ${_esc(c.similarityGroup!)}'}'
+        '${_esc(f.likelyBankName ?? 'Unknown parser')}'
+        '${f.label == null ? '' : ' · ${_esc(f.label!)}'}'
         '</span>');
     b.writeln('</div>');
-    b.writeln('<pre class="template">${_esc(c.template)}</pre>');
-    if (c.examples.isNotEmpty) {
-      b.writeln('<details><summary>${c.examples.length} example'
-          '${c.examples.length == 1 ? '' : 's'}</summary>');
-      for (final ex in c.examples) {
+    b.writeln('<pre class="template">${_esc(f.template)}</pre>');
+    if (f.memberCount > 1) {
+      b.writeln('<details><summary>${f.variantTemplates.length} variant(s) '
+          '— one regex should cover all</summary>');
+      for (final v in f.variantTemplates) {
+        b.writeln('<pre class="example">${_esc(v)}</pre>');
+      }
+      b.writeln('</details>');
+    }
+    final examples = f.examples();
+    if (examples.isNotEmpty) {
+      b.writeln('<details><summary>${examples.length} example'
+          '${examples.length == 1 ? '' : 's'}</summary>');
+      for (final ex in examples) {
         b.writeln('<pre class="example">${_esc(ex)}</pre>');
       }
       b.writeln('</details>');

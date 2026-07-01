@@ -9,6 +9,7 @@ import 'package:sms_pattern_lab/baseline/parser_baseline.dart';
 import 'package:sms_pattern_lab/corpus/corpus.dart';
 import 'package:sms_pattern_lab/models/coverage_report.dart';
 import 'package:sms_pattern_lab/models/sms_message.dart';
+import 'package:sms_pattern_lab/models/template_family.dart';
 import 'package:sms_pattern_lab/parser_adapter/totals_parser_adapter.dart';
 import 'package:sms_pattern_lab/reports/html_report.dart';
 import 'package:sms_pattern_lab/reports/markdown_report.dart';
@@ -230,9 +231,11 @@ void _runDiscover(_Args args) {
 /// Discovery-first console: candidate new formats lead, then coverage.
 void _printDiscoveryConsole(CoverageReport r, _Args args,
     {bool includeNoise = false}) {
-  final candidates = includeNoise
-      ? [...r.candidateNewFormats, ...r.noiseClusters]
-      : r.candidateNewFormats;
+  final candidates = [
+    ...r.candidateFamilies,
+    if (includeNoise)
+      for (final c in r.noiseClusters) TemplateFamily([c]),
+  ];
 
   stdout.writeln('═══ Candidate new formats (unrecognized senders) ═══');
   if (candidates.isEmpty) {
@@ -242,10 +245,11 @@ void _printDiscoveryConsole(CoverageReport r, _Args args,
     stdout.writeln('${candidates.length} distinct format(s) from senders no '
         'parser recognizes — likely banks/formats with no parser yet:');
     var i = 1;
-    for (final c in candidates.take(args.top)) {
-      stdout.writeln('  $i. [${c.priority} · regex:${c.regexReadiness}] '
-          'x${c.occurrences}');
-      stdout.writeln('     ${c.template}');
+    for (final f in candidates.take(args.top)) {
+      stdout.writeln('  $i. [${f.priority} · regex:${f.regexReadiness}] '
+          'x${f.totalOccurrences}'
+          '${f.memberCount > 1 ? ' · ${f.memberCount} variants' : ''}');
+      stdout.writeln('     ${f.template}');
       i++;
     }
     if (candidates.length > args.top) {
@@ -764,29 +768,33 @@ void _printCoverageConsole(CoverageReport r, {bool includeNoise = false}) {
         '(${p.matched}/${p.total})');
   }
 
-  final attributed = r.attributedClusters;
+  final attributed = r.attributedFamilies;
   if (attributed.isNotEmpty) {
     stdout.writeln('');
     stdout.writeln('Top missing templates (known banks):');
-    for (final c in attributed.take(5)) {
-      stdout.writeln('  [${c.priority} · regex:${c.regexReadiness}] '
-          'x${c.occurrences}  ${c.likelyBankName ?? 'Unknown'}');
-      stdout.writeln('      ${c.template}');
+    for (final f in attributed.take(5)) {
+      stdout.writeln('  [${f.priority} · regex:${f.regexReadiness}] '
+          'x${f.totalOccurrences}  ${f.likelyBankName ?? 'Unknown'}'
+          '${f.memberCount > 1 ? ' · ${f.memberCount} variants' : ''}');
+      stdout.writeln('      ${f.template}');
     }
   }
 
   // Discovery signal: formats from senders no parser recognizes.
-  final candidates = includeNoise
-      ? [...r.candidateNewFormats, ...r.noiseClusters]
-      : r.candidateNewFormats;
+  final candidates = [
+    ...r.candidateFamilies,
+    if (includeNoise)
+      for (final c in r.noiseClusters) TemplateFamily([c]),
+  ];
   if (candidates.isNotEmpty) {
     stdout.writeln('');
     stdout.writeln('⚑ Candidate new formats (unrecognized sender) — '
         '${candidates.length} distinct:');
-    for (final c in candidates.take(5)) {
-      stdout.writeln('  [${c.priority} · regex:${c.regexReadiness}] '
-          'x${c.occurrences}');
-      stdout.writeln('      ${c.template}');
+    for (final f in candidates.take(5)) {
+      stdout.writeln('  [${f.priority} · regex:${f.regexReadiness}] '
+          'x${f.totalOccurrences}'
+          '${f.memberCount > 1 ? ' · ${f.memberCount} variants' : ''}');
+      stdout.writeln('      ${f.template}');
     }
     stdout.writeln('  → likely a format/bank with no parser yet. '
         '(Pull with --all to surface more.)');

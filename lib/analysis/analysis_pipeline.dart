@@ -43,7 +43,13 @@ class AnalysisPipeline {
     SimilarityGrouper? grouper,
   })  : clusterer = clusterer ?? ExactClusterer(),
         grouper = grouper ?? IdentityGrouper() {
-    _coverage = CoverageAnalyzer(adapter: adapter, clusterer: this.clusterer);
+    // The grouper is consumed inside the analyzer, which builds the family-aware
+    // CoverageReport (V2 step 0). Swap in a Levenshtein/TF-IDF grouper here.
+    _coverage = CoverageAnalyzer(
+      adapter: adapter,
+      clusterer: this.clusterer,
+      grouper: this.grouper,
+    );
   }
 
   AnalysisResult run(List<SmsMessage> messages) {
@@ -52,11 +58,6 @@ class AnalysisPipeline {
     // CoverageReport's candidate vs noise split), not dropped here.
     final parseResults = adapter.parseAll(messages);
     final coverage = _coverage.analyze(parseResults);
-    // V1: IdentityGrouper tags in place and returns the same list. V2/V3 will
-    // need this to MERGE clusters into families — at which point the pipeline
-    // must consume the returned structure and CoverageReport must become
-    // family-aware. See ROADMAP_NOTES.md → "V2 · TemplateFamily".
-    grouper.group(coverage.unmatchedClusters);
     final stats = DatasetStatistics.from(parseResults);
     return AnalysisResult(
       parseResults: parseResults,

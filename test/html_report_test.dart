@@ -10,7 +10,7 @@ void main() {
 
   test('renders a self-contained HTML document', () {
     if (adapter == null) return;
-    final messages = DatasetLoader.load('example/cbe_sms.json');
+    final messages = DatasetLoader.load('example/sample_sms.json');
     final result = AnalysisPipeline(adapter: adapter).run(messages);
     final html =
         HtmlReport(result.coverage, parserName: 'Totals').render();
@@ -22,7 +22,7 @@ void main() {
 
   test('is fully offline: no fetched resources or scripts', () {
     if (adapter == null) return;
-    final messages = DatasetLoader.load('example/cbe_sms.json');
+    final messages = DatasetLoader.load('example/sample_sms.json');
     final result = AnalysisPipeline(adapter: adapter).run(messages);
     final html =
         HtmlReport(result.coverage, parserName: 'Totals').render();
@@ -37,7 +37,7 @@ void main() {
 
   test('escapes placeholder angle brackets so templates render as text', () {
     if (adapter == null) return;
-    final messages = DatasetLoader.load('example/cbe_sms.json');
+    final messages = DatasetLoader.load('example/sample_sms.json');
     final result = AnalysisPipeline(adapter: adapter).run(messages);
     final html =
         HtmlReport(result.coverage, parserName: 'Totals').render();

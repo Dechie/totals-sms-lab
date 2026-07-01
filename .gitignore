@@ -3,5 +3,10 @@
 build/
 *.report.md
 
+# Datasets (real SMS exports, device pulls, corpora) are local/private.
+# Note: example/sample_sms.json is already tracked and stays tracked — the
+# tests depend on it — so it isn't affected by this ignore.
+example/
+
 # This is an application/CLI, so pubspec.lock SHOULD be committed for
 # reproducible builds — it is intentionally not ignored.

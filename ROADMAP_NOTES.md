@@ -77,16 +77,12 @@ The whole roadmap hinges on promoting two things from "label/summary" to
 "first-class data". Both are additive. Doing each at the *start* of its version
 avoids reworking reports twice.
 
-### A. `TemplateCluster` → `TemplateFamily`  (needed first in **V2**)
-Today similarity can only *tag* a cluster (`TemplateCluster.similarityGroup`,
-a `String?`). It cannot *merge*. And the pipeline throws away the grouper's
-return value:
-
-- `lib/analysis/analysis_pipeline.dart` → `grouper.group(coverage.unmatchedClusters);`
-  is a bare statement; the return is ignored (works in V1 only because
-  `IdentityGrouper` mutates in place and returns the same list).
-- `CoverageReport.unmatchedClusters` and `ParserCoverage.missingTemplates` are
-  flat `List<TemplateCluster>`.
+### A. `TemplateCluster` → `TemplateFamily`  — ✅ DONE (V2 step 0)
+Shipped: the grouper returns `List<TemplateFamily>`, the analyzer consumes it and
+builds `CoverageReport.attributedFamilies`/`candidateFamilies`, reports render
+families. `IdentityGrouper` (1 family/cluster) keeps V1 output identical.
+(Historical context: the pipeline used to *discard* the grouper's return, and
+similarity could only *tag* a cluster; both are now resolved.)
 
 ### B. Baseline history → **coverage** history  (needed first in **V4**)
 `BaselineHistory` records parser *baselines* (signature, counts, rev), not
@@ -125,7 +121,14 @@ thousands of rows. Family-merging is what makes discovery output actionable.
   small. (If k ever gets large per bank, block by bank first — banks don't share
   families.)
 
-### Required refactor (the prerequisite — do before writing the algorithm)
+### Required refactor (the prerequisite) — ✅ SHIPPED (V2 step 0)
+This refactor is **done**: `TemplateFamily` exists (`lib/models/template_family.dart`),
+the grouper returns families, `CoverageAnalyzer` builds them (per-bank for
+attributed; separately for candidates), `CoverageReport` exposes
+`attributedFamilies`/`candidateFamilies`, and console/Markdown/HTML render
+families with dormant multi-member drill-down. `IdentityGrouper` is still the
+default so V1 output is byte-identical. **Next: the Levenshtein grouper (step 1).**
+The original checklist, for reference:
 1. **Introduce `TemplateFamily`** (suggested shape):
    ```dart
    class TemplateFamily {
@@ -324,10 +327,10 @@ map to named capture groups.
 
 ## 7. Suggested ordering (cheapest path)
 
-1. **V2 step 0:** introduce `TemplateFamily`, fix the ignored grouper return,
-   make `CoverageReport` + reports family-aware (no algorithm yet; IdentityGrouper
-   = one family per cluster, output unchanged). Apply to both unmatched streams.
-2. **V2 step 1:** Levenshtein grouper + `--similarity` flag + tests.
+1. ✅ **V2 step 0 (DONE):** introduced `TemplateFamily`, fixed the ignored grouper
+   return, made `CoverageReport` + reports family-aware (IdentityGrouper = one
+   family per cluster, output unchanged). Applied to both unmatched streams.
+2. **V2 step 1 (NEXT):** Levenshtein grouper + `--similarity` flag + tests.
 3. **V2 step 2:** TF-IDF + cosine grouper, composed after Levenshtein. Goal:
    integrated and producing families (correctness, not tuning).
 4. **V3:** tune thresholds/tokenization/synonyms on real `adb` corpora; fuzzy

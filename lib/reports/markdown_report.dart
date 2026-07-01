@@ -1,5 +1,5 @@
 import '../models/coverage_report.dart';
-import '../models/template_cluster.dart';
+import '../models/template_family.dart';
 
 /// Renders a [CoverageReport] into a developer-facing Markdown document:
 /// overall coverage, a per-parser health dashboard, and a prioritized list of
@@ -52,7 +52,7 @@ class MarkdownReport {
     b.writeln('| Distinct unmatched templates | '
         '${report.unmatchedClusters.length} |');
     b.writeln('| Candidate new formats (unknown sender) | '
-        '${report.candidateNewFormats.length} |');
+        '${report.candidateFamilies.length} |');
     if (report.noiseClusters.isNotEmpty) {
       b.writeln('| Noise clusters (filtered) | '
           '${report.noiseClusters.length} |');
@@ -64,10 +64,12 @@ class MarkdownReport {
   /// whole banks/formats with no parser yet. Listed before the per-bank gaps
   /// because these are the "unknown unknowns" the tool exists to surface.
   void _candidateNewFormats(StringBuffer b) {
-    final clusters = includeNoise
-        ? [...report.candidateNewFormats, ...report.noiseClusters]
-        : report.candidateNewFormats;
-    if (clusters.isEmpty) return;
+    final families = [
+      ...report.candidateFamilies,
+      if (includeNoise)
+        for (final c in report.noiseClusters) TemplateFamily([c]),
+    ];
+    if (families.isEmpty) return;
 
     b.writeln('## Candidate New Formats (unrecognized sender)');
     b.writeln();
@@ -80,14 +82,14 @@ class MarkdownReport {
           'filtered out as noise — run with `--no-filter` to include them.)_');
     }
     b.writeln();
-    final shown = clusters.take(topClusters).toList();
-    if (clusters.length > shown.length) {
-      b.writeln('_Showing top ${shown.length} of ${clusters.length}._');
+    final shown = families.take(topClusters).toList();
+    if (families.length > shown.length) {
+      b.writeln('_Showing top ${shown.length} of ${families.length}._');
       b.writeln();
     }
     var i = 1;
-    for (final c in shown) {
-      _cluster(b, i++, c);
+    for (final f in shown) {
+      _family(b, i++, f);
     }
   }
 
@@ -129,40 +131,47 @@ class MarkdownReport {
     b.writeln('## Unmatched Pattern Reports (known banks)');
     b.writeln();
     // Attributed gaps only — unknown-sender clusters get their own section.
-    final clusters = report.attributedClusters;
-    if (clusters.isEmpty) {
+    final families = report.attributedFamilies;
+    if (families.isEmpty) {
       b.writeln('🎉 No unmatched messages from recognized banks — every '
           'configured parser is fully covered for this dataset.');
       b.writeln();
       return;
     }
 
-    final shown = clusters.take(topClusters).toList();
-    if (clusters.length > shown.length) {
-      b.writeln('_Showing top ${shown.length} of ${clusters.length} '
-          'unmatched template clusters (ranked by priority)._');
+    final shown = families.take(topClusters).toList();
+    if (families.length > shown.length) {
+      b.writeln('_Showing top ${shown.length} of ${families.length} '
+          'unmatched template families (ranked by priority)._');
       b.writeln();
     }
 
     var i = 1;
-    for (final c in shown) {
-      _cluster(b, i++, c);
+    for (final f in shown) {
+      _family(b, i++, f);
     }
   }
 
-  void _cluster(StringBuffer b, int index, TemplateCluster c) {
-    b.writeln('### $index. ${c.priority} — ${c.occurrences} occurrence'
-        '${c.occurrences == 1 ? '' : 's'}');
+  void _family(StringBuffer b, int index, TemplateFamily f) {
+    final occ = f.totalOccurrences;
+    final variants = f.memberCount > 1 ? ' · ${f.memberCount} variants' : '';
+    b.writeln('### $index. ${f.priority} — $occ occurrence'
+        '${occ == 1 ? '' : 's'}$variants');
     b.writeln();
-    b.writeln('- **Likely parser:** ${c.likelyBankName ?? 'Unknown'}');
-    b.writeln('- **Regex-readiness:** ${c.regexReadiness}');
-    if (c.similarityGroup != null) {
-      b.writeln('- **Similarity group:** ${c.similarityGroup}');
+    b.writeln('- **Likely parser:** ${f.likelyBankName ?? 'Unknown'}');
+    b.writeln('- **Regex-readiness:** ${f.regexReadiness}');
+    if (f.label != null) b.writeln('- **Family:** ${f.label}');
+    b.writeln('- **Template:** `${_inline(f.template)}`');
+    if (f.memberCount > 1) {
+      b.writeln('- **Variants (same category, one regex should cover all):**');
+      for (final v in f.variantTemplates) {
+        b.writeln('  - `${_inline(v)}`');
+      }
     }
-    b.writeln('- **Template:** `${_inline(c.template)}`');
-    if (c.examples.isNotEmpty) {
+    final examples = f.examples();
+    if (examples.isNotEmpty) {
       b.writeln('- **Examples:**');
-      for (final ex in c.examples) {
+      for (final ex in examples) {
         b.writeln('  - `${_inline(ex)}`');
       }
     }

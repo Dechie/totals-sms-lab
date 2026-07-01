@@ -1,9 +1,11 @@
 import '../models/coverage_report.dart';
 import '../models/parse_result.dart';
 import '../models/template_cluster.dart';
+import '../models/template_family.dart';
 import '../parser_adapter/parser_adapter.dart';
 import '../clustering/exact_clusterer.dart';
 import '../filtering/transaction_heuristic.dart';
+import '../similarity/similarity_grouper.dart';
 
 /// Computes overall and per-parser coverage, and attaches each bank's missing
 /// templates so the report can point straight at the highest-impact gaps.
@@ -11,8 +13,15 @@ class CoverageAnalyzer {
   final ParserAdapter adapter;
   final ExactClusterer clusterer;
 
-  CoverageAnalyzer({required this.adapter, ExactClusterer? clusterer})
-      : clusterer = clusterer ?? ExactClusterer();
+  /// Groups exact clusters into families (V1: IdentityGrouper = 1:1).
+  final SimilarityGrouper grouper;
+
+  CoverageAnalyzer({
+    required this.adapter,
+    ExactClusterer? clusterer,
+    SimilarityGrouper? grouper,
+  })  : clusterer = clusterer ?? ExactClusterer(),
+        grouper = grouper ?? IdentityGrouper();
 
   CoverageReport analyze(List<ParseResult> results) {
     final total = results.length;
@@ -71,6 +80,14 @@ class CoverageAnalyzer {
       (_looksTransactional(c) ? candidateNewFormats : noiseClusters).add(c);
     }
 
+    // Group the two actionable streams into families (V1: 1 family/cluster).
+    // Attributed clusters are grouped per bank so the grouper never merges
+    // across banks even if a future grouper forgot to block by bank.
+    final attributed =
+        clusters.where((c) => c.likelyBankId != null).toList();
+    final attributedFamilies = _groupPerBank(attributed);
+    final candidateFamilies = _sortFamilies(grouper.group(candidateNewFormats));
+
     return CoverageReport(
       total: total,
       matched: matched,
@@ -79,7 +96,33 @@ class CoverageAnalyzer {
       unmatchedClusters: clusters,
       candidateNewFormats: candidateNewFormats,
       noiseClusters: noiseClusters,
+      attributedFamilies: attributedFamilies,
+      candidateFamilies: candidateFamilies,
     );
+  }
+
+  /// Group clusters within each bank separately, then flatten — a safety net so
+  /// families never span banks. Returns families sorted by priority.
+  List<TemplateFamily> _groupPerBank(List<TemplateCluster> clusters) {
+    final byBank = <int, List<TemplateCluster>>{};
+    for (final c in clusters) {
+      byBank.putIfAbsent(c.likelyBankId!, () => []).add(c);
+    }
+    final families = <TemplateFamily>[];
+    for (final group in byBank.values) {
+      families.addAll(grouper.group(group));
+    }
+    return _sortFamilies(families);
+  }
+
+  static List<TemplateFamily> _sortFamilies(List<TemplateFamily> families) {
+    families.sort((a, b) {
+      final byPriority = b.priorityRank.compareTo(a.priorityRank);
+      return byPriority != 0
+          ? byPriority
+          : b.totalOccurrences.compareTo(a.totalOccurrences);
+    });
+    return families;
   }
 
   /// Classify a cluster as transaction-like using a representative raw example

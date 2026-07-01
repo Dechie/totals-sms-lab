@@ -36,7 +36,8 @@ class TemplateCluster {
 
   /// Priority bucket derived from occurrence count.
   /// Frequent unmatched templates are the cheapest, highest-impact wins.
-  String get priority {
+  /// Shared with [TemplateFamily] (which buckets on *total* family occurrences).
+  static String priorityFor(int occurrences) {
     if (occurrences >= 500) return 'Very High';
     if (occurrences >= 100) return 'High';
     if (occurrences >= 20) return 'Medium';
@@ -45,7 +46,7 @@ class TemplateCluster {
   }
 
   /// Numeric rank for sorting (higher = more urgent).
-  int get priorityRank {
+  static int priorityRankFor(String priority) {
     switch (priority) {
       case 'Very High':
         return 5;
@@ -59,6 +60,10 @@ class TemplateCluster {
         return 1;
     }
   }
+
+  String get priority => priorityFor(occurrences);
+
+  int get priorityRank => priorityRankFor(priority);
 
   // --- regex-readiness ------------------------------------------------------
   //
