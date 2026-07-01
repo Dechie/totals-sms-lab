@@ -37,6 +37,12 @@ class TemplateFamily {
   int? get likelyBankId => representative.likelyBankId;
   String? get likelyBankName => representative.likelyBankName;
 
+  /// Canonical action verb + direction the family was grouped on (from the
+  /// representative; all members of a verb bucket share these). `null` for
+  /// families that carry no action word (IdentityGrouper, or untagged shapes).
+  String? get actionVerb => representative.actionVerb;
+  TxDirection? get direction => representative.direction;
+
   /// Regex-readiness of the shape a dev would author (the representative).
   String get regexReadiness => representative.regexReadiness;
 

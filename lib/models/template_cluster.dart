@@ -1,11 +1,20 @@
+/// Transaction direction inferred from a template's action verb.
+///
+/// `incoming` (money in: credited/received/deposited), `outgoing` (money out:
+/// debited/transferred/paid/withdrawn), or `neutral` (status/ambiguous verbs
+/// like confirmed/successful/transaction). Set by the `Annotator` and used by
+/// `SemanticVerbGrouper` to bucket and label families (ENRICHMENT_FIELDS.md).
+enum TxDirection { incoming, outgoing, neutral }
+
 /// A group of unmatched messages that share the same normalized template.
 ///
 /// Produced by the clustering stage. Priority is a derived heuristic used to
 /// rank where regex effort should go first.
 ///
-/// ⚑ V2: this flat cluster is the unit V2 will merge into `TemplateFamily`
-/// objects (aggregating occurrences/examples). See ROADMAP_NOTES.md before
-/// extending — `similarityGroup` is only a placeholder label until then.
+/// ⚑ V2: this flat cluster is the unit V2 merges into `TemplateFamily`
+/// objects (aggregating occurrences/examples). The `Annotator` tags each
+/// cluster with an [actionVerb] + [direction] (V2 step 1) that the
+/// `SemanticVerbGrouper` groups on. See ROADMAP_NOTES.md before extending.
 class TemplateCluster {
   /// The normalized template string (variable data replaced by placeholders).
   final String template;
@@ -25,6 +34,15 @@ class TemplateCluster {
   /// Optional similarity-group label (assigned by V2/V3 stages).
   String? similarityGroup;
 
+  /// Canonical action-verb lemma tagged by the `Annotator` (e.g. "transfer"
+  /// for "transferred"/"transfer of"), or `null` if no lexicon word matched.
+  /// It is a *tag*, never stripped — the verb stays in [template].
+  String? actionVerb;
+
+  /// Transaction direction derived from [actionVerb]. `null` iff [actionVerb]
+  /// is `null`.
+  TxDirection? direction;
+
   TemplateCluster({
     required this.template,
     required this.occurrences,
@@ -32,6 +50,8 @@ class TemplateCluster {
     this.likelyBankId,
     this.likelyBankName,
     this.similarityGroup,
+    this.actionVerb,
+    this.direction,
   }) : examples = examples ?? <String>[];
 
   /// Priority bucket derived from occurrence count.

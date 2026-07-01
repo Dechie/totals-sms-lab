@@ -13,6 +13,8 @@ import 'package:sms_pattern_lab/models/template_family.dart';
 import 'package:sms_pattern_lab/parser_adapter/totals_parser_adapter.dart';
 import 'package:sms_pattern_lab/reports/html_report.dart';
 import 'package:sms_pattern_lab/reports/markdown_report.dart';
+import 'package:sms_pattern_lab/similarity/semantic_verb_grouper.dart';
+import 'package:sms_pattern_lab/similarity/similarity_grouper.dart';
 import 'package:sms_pattern_lab/sources/adb_sms_source.dart';
 import 'package:sms_pattern_lab/utils/dataset_loader.dart';
 
@@ -91,8 +93,23 @@ AnalysisResult _analyze(_Args args) {
       '${baseline.sourceLabel == null ? '' : ' (${baseline.sourceLabel})'}');
   stdout.writeln('');
 
-  final pipeline = AnalysisPipeline(adapter: adapter);
+  final pipeline = AnalysisPipeline(adapter: adapter, grouper: _grouper(args));
   return pipeline.run(messages);
+}
+
+/// Selects the similarity grouper from `--group=` (default: identity = V1).
+SimilarityGrouper _grouper(_Args args) {
+  switch (args.grouping) {
+    case 'verb':
+    case 'semantic':
+      return SemanticVerbGrouper();
+    case 'identity':
+      return IdentityGrouper();
+    default:
+      stderr.writeln(
+          'Warning: unknown --group=${args.grouping}; using identity.');
+      return IdentityGrouper();
+  }
 }
 
 /// Load the dataset for an analysis command from either `--adb` (live device)
@@ -223,7 +240,8 @@ void _runDiscover(_Args args) {
   }
   stdout.writeln('');
 
-  final result = AnalysisPipeline(adapter: adapter).run(messages);
+  final result =
+      AnalysisPipeline(adapter: adapter, grouper: _grouper(args)).run(messages);
   _printDiscoveryConsole(result.coverage, args, includeNoise: args.noFilter);
   _enforceMinCoverage(args, result.coverage.overallCoveragePercent);
 }
@@ -353,7 +371,8 @@ void _runPull(_Args args) {
   if (args.analyzeAfter) {
     stdout.writeln('');
     final adapter = _resolveAdapter(args);
-    final result = AnalysisPipeline(adapter: adapter).run(messages);
+    final result =
+        AnalysisPipeline(adapter: adapter, grouper: _grouper(args)).run(messages);
     _printCoverageConsole(result.coverage, includeNoise: args.noFilter);
   } else {
     stdout.writeln('Next: sms-pattern-lab analyze $outPath');
@@ -884,6 +903,8 @@ OPTIONS
   --no-filter          Keep non-transaction messages (OTPs, promos, notices);
                        default drops them as noise before analysis
   --min-coverage=<n>   `analyze`: exit non-zero (4) if coverage < n% (CI gate)
+  --group=<mode>       Family grouping: identity (default, 1/cluster) | verb
+                       (action-verb + direction, e.g. "Outgoing transfers")
   --out=<path>         Output path (report, or dataset for `pull`)
   --top=<n>            Max clusters to show/emit  (default: 25)
   --json               Emit machine-readable JSON (stats/templates)
@@ -895,6 +916,7 @@ EXAMPLES
   sms-pattern-lab analyze example/cbe_sms.json
   sms-pattern-lab discover --adb              # all senders, discovery-first
   sms-pattern-lab analyze example/cbe_sms.json --html        # HTML report
+  sms-pattern-lab analyze example/cbe_sms.json --group=verb  # semantic families
   sms-pattern-lab pull --analyze              # pull CBE SMS from phone + analyze
   sms-pattern-lab pull --all --out=all.json   # dump every SMS to a dataset
   sms-pattern-lab analyze --adb --html        # fetch live, write HTML report
@@ -930,6 +952,10 @@ class _Args {
   final String? against;
   final double? minCoverage;
 
+  /// Similarity grouper to use: `identity` (V1 default, 1 family/cluster) or
+  /// `verb` (V2 SemanticVerbGrouper). See ROADMAP_NOTES §3.
+  final String grouping;
+
   /// Sender codes to keep when pulling from a device. CBE-only for now, per the
   /// current focus; override with --bank=CODE (repeatable) or --all.
   final List<String> banks;
@@ -956,6 +982,7 @@ class _Args {
     required this.from,
     required this.against,
     required this.minCoverage,
+    required this.grouping,
     required this.banks,
   });
 
@@ -983,6 +1010,7 @@ class _Args {
     String? from;
     String? against;
     double? minCoverage;
+    var grouping = 'identity';
     final bankCodes = <String>[];
 
     for (final arg in argv) {
@@ -1042,6 +1070,9 @@ class _Args {
           case 'min-coverage':
             minCoverage = double.tryParse(value ?? '');
             break;
+          case 'group':
+            if (value != null) grouping = value.toLowerCase();
+            break;
           case 'device':
             device = value;
             break;
@@ -1086,6 +1117,7 @@ class _Args {
       from: from,
       against: against,
       minCoverage: minCoverage,
+      grouping: grouping,
       banks: bankCodes,
     );
   }

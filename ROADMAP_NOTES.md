@@ -102,12 +102,16 @@ polished semantic families and trends are **V4**.
 **Sequencing (locked):** lead with the cheapest, most deterministic method and
 only escalate for what it misses. Algorithm 1 (exact normalization + hashing)
 already shipped in V1.
-1. **Action-verb grouping — PRIMARY.** An `Annotator` tags each template with an
-   `actionVerb` from `action_words.txt` (`null` if none) — see
-   ENRICHMENT_FIELDS.md. Group by verb + direction (credited/received/deposited →
-   *incoming*; debited/paid/transferred/withdrawn → *outgoing*). Deterministic,
-   O(n) lookup, zero training — does most of the semantic work *and* labels the
-   family for free. This supersedes the older "Levenshtein first" plan.
+1. **Action-verb grouping — PRIMARY. ✅ DONE (V2 step 1).** An `Annotator`
+   (`lib/annotation/annotator.dart`) tags each template with a canonical
+   `actionVerb` lemma + `direction` from the `ActionLexicon`
+   (`lib/annotation/action_lexicon.dart`, the structured companion to
+   `action_words.txt`; a test asserts they stay in sync). `SemanticVerbGrouper`
+   (`lib/similarity/semantic_verb_grouper.dart`) buckets by verb + bank and
+   labels families ("Outgoing transfers"). Opt-in via `--group=verb`;
+   `IdentityGrouper` stays the default so V1 output is byte-identical.
+   Deterministic, O(n) lookup, zero training. Supersedes the older
+   "Levenshtein first" plan.
 2. **Levenshtein — near-identical wording.** Within a verb bucket, merge "typo"
    variants ("Transferred …" vs "Transfer of …") by edit-distance ratio.
 3. **TF-IDF + cosine — FALLBACK.** Only for synonyms the lexicon + Levenshtein
@@ -138,8 +142,8 @@ the grouper returns families, `CoverageAnalyzer` builds them (per-bank for
 attributed; separately for candidates), `CoverageReport` exposes
 `attributedFamilies`/`candidateFamilies`, and console/Markdown/HTML render
 families with dormant multi-member drill-down. `IdentityGrouper` is still the
-default so V1 output is byte-identical. **Next: the `Annotator` + action-verb
-grouper (step 1).** The original checklist, for reference:
+default so V1 output is byte-identical. **Step 1 (`Annotator` + action-verb
+grouper) is now DONE — see below.** The original checklist, for reference:
 1. **Introduce `TemplateFamily`** (suggested shape):
    ```dart
    class TemplateFamily {
@@ -354,11 +358,12 @@ map to named capture groups.
 1. ✅ **V2 step 0 (DONE):** introduced `TemplateFamily`, fixed the ignored grouper
    return, made `CoverageReport` + reports family-aware (IdentityGrouper = one
    family per cluster, output unchanged). Applied to both unmatched streams.
-2. **V2 step 1 (NEXT):** `Annotator` (tag `actionVerb` from `action_words.txt`) +
-   `SemanticVerbGrouper` (bucket by verb + direction, sets family label) + tests.
-   The primary, deterministic grouper.
-3. **V2 step 2:** Levenshtein grouper (merge near-identical wording *within* a
-   verb bucket) + `--similarity` flag + tests.
+2. ✅ **V2 step 1 (DONE):** `Annotator` (tags a canonical `actionVerb` lemma +
+   `direction` via `ActionLexicon`) + `SemanticVerbGrouper` (buckets by verb +
+   bank, sets family label) + tests. Opt-in `--group=verb`; IdentityGrouper
+   still default. The primary, deterministic grouper.
+3. **V2 step 2 (NEXT):** Levenshtein grouper (merge near-identical wording
+   *within* a verb bucket) + `--similarity` flag + tests.
 4. **V2 step 3:** TF-IDF + cosine grouper as fallback, composed last. Goal:
    integrated and producing families (correctness, not tuning).
 5. **V3:** tune thresholds/tokenization/synonyms on real `adb` corpora; fuzzy
