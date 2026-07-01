@@ -68,13 +68,25 @@ void main() {
         grouping: 'verb',
       );
 
-      expect(doc['version'], equals(EnrichmentExport.version));
-      expect(doc['baselineSignature'], equals('abc123def456abcd'));
-      expect(doc['datasetId'], equals('0011223344556677'));
-      expect(doc['grouping'], equals('verb'));
-      expect((doc['coverage'] as Map)['overallPercent'], equals(60.0));
-      expect((doc['quality'] as Map)['clean'], isTrue);
-      expect(doc['unitCount'], equals(1));
+      final meta = doc['metadata'] as Map;
+      expect(meta['version'], equals(EnrichmentExport.version));
+      expect(meta['baselineSignature'], equals('abc123def456abcd'));
+      expect(meta['datasetId'], equals('0011223344556677'));
+      expect(meta['grouping'], equals('verb'));
+      expect((meta['coverage'] as Map)['overallPercent'], equals(60.0));
+      expect((meta['quality'] as Map)['clean'], isTrue);
+      expect(meta['categories'], equals(1));
+
+      // Parse success/failure — "x of y".
+      final msgs = meta['messages'] as Map;
+      expect(msgs['total'], equals(10));
+      expect(msgs['parsed'], equals(6));
+      expect(msgs['unparsed'], equals(4));
+      expect(msgs['parsedPercent'], equals(60.0));
+      expect(msgs['parseErrors'], equals(0));
+
+      // metadata comes before units in the serialized document.
+      expect(doc.keys.toList(), equals(['metadata', 'units']));
     });
 
     test('redacts degraded families — count survives, content withheld', () {

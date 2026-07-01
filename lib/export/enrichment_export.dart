@@ -28,9 +28,15 @@ import '../models/template_family.dart';
 /// normalization was degraded is **redacted** (its count survives, its untrusted
 /// text/shape do not); a family that fails to serialize is dropped and counted.
 /// Raw values and raw bodies are never included.
+///
+/// Shape (schema v3): a leading `metadata` object — everything about the run
+/// (baseline signature, dataset id, parse success/failure counts, coverage, the
+/// final category count, and the data-quality ledger) — followed by the `units`
+/// list. Read the header first; it says how much to trust the body.
 class EnrichmentExport {
-  /// Bumped to 2 when the document gained baseline/dataset/quality metadata.
-  static const version = 2;
+  /// v2 added baseline/dataset/quality; v3 nested it all under `metadata` and
+  /// added explicit parse success/failure + category counts.
+  static const version = 3;
 
   static Map<String, dynamic> build(
     CoverageReport report, {
@@ -51,7 +57,7 @@ class EnrichmentExport {
       if (unit != null) units.add(unit);
     }
 
-    return {
+    final metadata = <String, dynamic>{
       'version': version,
       if (generatedAt != null) 'generatedAt': generatedAt,
       'parser': parserName,
@@ -62,19 +68,31 @@ class EnrichmentExport {
       'datasetId': datasetId,
       'grouping': grouping,
       if (similarity != null) 'similarity': similarity,
+      // Parse success/failure — "x of y" the parser matched vs missed.
+      'messages': {
+        'total': report.total,
+        'parsed': report.matched, // matched by the host parser (success)
+        'unparsed': report.unmatched, // no pattern matched (the gaps)
+        'parsedPercent':
+            double.parse(report.overallCoveragePercent.toStringAsFixed(2)),
+        'parseErrors': q.parseErrors, // messages the parser threw on
+      },
+      // Final number of distinct gap categories the unmatched messages
+      // collapsed into (what `units` holds).
+      'categories': units.length,
       'coverage': _coverage(report),
       'quality': q.toJson(),
-      'unitCount': units.length,
+    };
+
+    return {
+      'metadata': metadata,
       'units': units,
     };
   }
 
-  /// Coverage snapshot — mirrors the V4 coverage-history schema so an export
-  /// doubles as a coverage record tied to (baselineSignature, datasetId).
+  /// Per-bank coverage snapshot — mirrors the V4 coverage-history schema so an
+  /// export doubles as a coverage record tied to (baselineSignature, datasetId).
   static Map<String, dynamic> _coverage(CoverageReport r) => {
-        'total': r.total,
-        'matched': r.matched,
-        'unmatched': r.unmatched,
         'overallPercent':
             double.parse(r.overallCoveragePercent.toStringAsFixed(2)),
         'perBank': {
@@ -132,15 +150,18 @@ class EnrichmentExport {
   /// A short human summary for `--preview`, so a contributor can review exactly
   /// what would be shared before it leaves their device.
   static String preview(Map<String, dynamic> doc) {
+    final meta = doc['metadata'] as Map<String, dynamic>;
     final units = (doc['units'] as List).cast<Map<String, dynamic>>();
-    final cov = doc['coverage'] as Map<String, dynamic>;
+    final msgs = meta['messages'] as Map<String, dynamic>;
     final b = StringBuffer()
-      ..writeln('Enrichment export preview — ${units.length} unit(s), '
-          'parser "${doc['parser']}".')
-      ..writeln('Baseline ${doc['baselineSignature']} · '
-          'dataset ${doc['datasetId']} · '
-          'coverage ${cov['overallPercent']}%')
-      ..writeln('Data quality: ${_qualitySummary(doc)}')
+      ..writeln('Enrichment export preview — parser "${meta['parser']}".')
+      ..writeln('Parsed ${msgs['parsed']}/${msgs['total']} messages '
+          '(${msgs['parsedPercent']}%); '
+          '${msgs['unparsed']} unparsed → ${meta['categories']} categor'
+          '${meta['categories'] == 1 ? 'y' : 'ies'}.')
+      ..writeln('Baseline ${meta['baselineSignature']} · '
+          'dataset ${meta['datasetId']}')
+      ..writeln('Data quality: ${_qualitySummary(meta)}')
       ..writeln('Only the fields below are shared; no raw values or bodies.\n');
     for (final u in units) {
       if (u['redacted'] == true) {
@@ -164,8 +185,8 @@ class EnrichmentExport {
     return b.toString();
   }
 
-  static String _qualitySummary(Map<String, dynamic> doc) {
-    final q = doc['quality'] as Map<String, dynamic>;
+  static String _qualitySummary(Map<String, dynamic> meta) {
+    final q = meta['quality'] as Map<String, dynamic>;
     if (q['clean'] == true) return 'clean (no anomalies)';
     final parts = <String>[];
     q.forEach((k, v) {

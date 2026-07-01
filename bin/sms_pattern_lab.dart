@@ -171,8 +171,10 @@ void _runExport(_Args args) {
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(
       '${const JsonEncoder.withIndent('  ').convert(doc)}\n');
+  final categories = (doc['metadata'] as Map)['categories'];
   stdout.writeln('\n📦 Enrichment export → $outPath '
-      '(${doc['unitCount']} unit(s), no raw values; quality: ${quality.summary()}).');
+      '($categories categor${categories == 1 ? 'y' : 'ies'}, no raw values; '
+      'quality: ${quality.summary()}).');
 }
 
 /// Load the dataset for an analysis command from either `--adb` (live device)
