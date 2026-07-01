@@ -13,6 +13,7 @@ import 'package:sms_pattern_lab/models/template_family.dart';
 import 'package:sms_pattern_lab/parser_adapter/totals_parser_adapter.dart';
 import 'package:sms_pattern_lab/reports/html_report.dart';
 import 'package:sms_pattern_lab/reports/markdown_report.dart';
+import 'package:sms_pattern_lab/similarity/levenshtein_grouper.dart';
 import 'package:sms_pattern_lab/similarity/semantic_verb_grouper.dart';
 import 'package:sms_pattern_lab/similarity/similarity_grouper.dart';
 import 'package:sms_pattern_lab/sources/adb_sms_source.dart';
@@ -103,6 +104,11 @@ SimilarityGrouper _grouper(_Args args) {
     case 'verb':
     case 'semantic':
       return SemanticVerbGrouper();
+    case 'levenshtein':
+    case 'lev':
+      // Verb buckets refined by wording similarity (V2 step 2).
+      return SemanticVerbGrouper(
+          within: LevenshteinGrouper(threshold: args.similarity));
     case 'identity':
       return IdentityGrouper();
     default:
@@ -904,7 +910,9 @@ OPTIONS
                        default drops them as noise before analysis
   --min-coverage=<n>   `analyze`: exit non-zero (4) if coverage < n% (CI gate)
   --group=<mode>       Family grouping: identity (default, 1/cluster) | verb
-                       (action-verb + direction, e.g. "Outgoing transfers")
+                       (action-verb + direction, e.g. "Outgoing transfers") |
+                       levenshtein (verb buckets refined by wording similarity)
+  --similarity=<r>     levenshtein merge threshold, 0..1  (default: 0.9)
   --out=<path>         Output path (report, or dataset for `pull`)
   --top=<n>            Max clusters to show/emit  (default: 25)
   --json               Emit machine-readable JSON (stats/templates)
@@ -952,9 +960,13 @@ class _Args {
   final String? against;
   final double? minCoverage;
 
-  /// Similarity grouper to use: `identity` (V1 default, 1 family/cluster) or
-  /// `verb` (V2 SemanticVerbGrouper). See ROADMAP_NOTES §3.
+  /// Similarity grouper to use: `identity` (V1 default, 1 family/cluster),
+  /// `verb` (V2 step 1 SemanticVerbGrouper), or `levenshtein` (V2 step 2: verb
+  /// buckets refined by wording). See ROADMAP_NOTES §3.
   final String grouping;
+
+  /// Levenshtein merge threshold for `--group=levenshtein` (0..1, default 0.9).
+  final double similarity;
 
   /// Sender codes to keep when pulling from a device. CBE-only for now, per the
   /// current focus; override with --bank=CODE (repeatable) or --all.
@@ -983,6 +995,7 @@ class _Args {
     required this.against,
     required this.minCoverage,
     required this.grouping,
+    required this.similarity,
     required this.banks,
   });
 
@@ -1011,6 +1024,7 @@ class _Args {
     String? against;
     double? minCoverage;
     var grouping = 'identity';
+    var similarity = 0.9;
     final bankCodes = <String>[];
 
     for (final arg in argv) {
@@ -1073,6 +1087,9 @@ class _Args {
           case 'group':
             if (value != null) grouping = value.toLowerCase();
             break;
+          case 'similarity':
+            similarity = double.tryParse(value ?? '') ?? similarity;
+            break;
           case 'device':
             device = value;
             break;
@@ -1118,6 +1135,7 @@ class _Args {
       against: against,
       minCoverage: minCoverage,
       grouping: grouping,
+      similarity: similarity,
       banks: bankCodes,
     );
   }

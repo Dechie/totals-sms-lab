@@ -112,8 +112,13 @@ already shipped in V1.
    `IdentityGrouper` stays the default so V1 output is byte-identical.
    Deterministic, O(n) lookup, zero training. Supersedes the older
    "Levenshtein first" plan.
-2. **Levenshtein — near-identical wording.** Within a verb bucket, merge "typo"
-   variants ("Transferred …" vs "Transfer of …") by edit-distance ratio.
+2. **Levenshtein — near-identical wording. ✅ DONE (V2 step 2).** Pure two-row
+   DP (`lib/similarity/levenshtein.dart`) + `LevenshteinGrouper`
+   (`lib/similarity/levenshtein_grouper.dart`): greedy seed-and-fold on the
+   similarity ratio, blocks by bank. Composed as `SemanticVerbGrouper.within`
+   so it refines *within* a verb bucket (each sub-family keeps the verb label);
+   opt-in via `--group=levenshtein`, threshold via `--similarity=` (default
+   0.9). Merges "typo"/small-wording variants the exact clusterer split.
 3. **TF-IDF + cosine — FALLBACK.** Only for synonyms the lexicon + Levenshtein
    miss. Statistically weak on tiny corpora, so intentionally last, not the
    workhorse.
@@ -178,13 +183,19 @@ grouper) is now DONE — see below.** The original checklist, for reference:
 - `actionVerb == null` on a transactional-looking template ⇒ candidate **new
   action word** — surface it (self-improving lexicon).
 
-### Algorithm notes — Levenshtein
-- Standard two-row DP, pure Dart. Normalize by max length → similarity ratio;
-  merge when `ratio ≥ threshold` (start ~0.9, expose as `--similarity=`).
-- Runs **within a verb bucket** to merge near-identical wording.
-- Cluster greedily: sort templates by occurrence desc; each becomes a family seed;
-  fold in any unseeded template within threshold. Deterministic given the sort.
-- **Block by `likelyBankId`** before pairwise — never merge across banks.
+### Algorithm notes — Levenshtein — ✅ SHIPPED (V2 step 2)
+- Standard two-row DP, pure Dart (`levenshteinDistance`/`similarityRatio` in
+  `lib/similarity/levenshtein.dart`). Normalize by max length → similarity ratio;
+  merge when `ratio ≥ threshold` (default 0.9, exposed as `--similarity=`).
+- Runs **within a verb bucket** via `SemanticVerbGrouper.within` — each resulting
+  wording sub-family inherits the bucket's verb/direction label.
+- Cluster greedily: sort templates by occurrence desc (ties by template, so the
+  seed order is input-order-independent); each becomes a family seed; fold in any
+  unseeded template within threshold. Deterministic.
+- **Blocks by `likelyBankId`** before pairwise — never merges across banks.
+- *Note:* wording gaps wider than the threshold (e.g. "Transferred …" vs
+  "Transfer of …" at ~0.85) intentionally stay separate sub-families; the verb
+  bucket already unifies them at the label level. Tune the threshold in V3.
 
 ### Algorithm notes — TF-IDF + cosine (fallback)
 - A `SimilarityGrouper` impl. Compose *after* the lexicon + Levenshtein (only for
@@ -362,9 +373,11 @@ map to named capture groups.
    `direction` via `ActionLexicon`) + `SemanticVerbGrouper` (buckets by verb +
    bank, sets family label) + tests. Opt-in `--group=verb`; IdentityGrouper
    still default. The primary, deterministic grouper.
-3. **V2 step 2 (NEXT):** Levenshtein grouper (merge near-identical wording
-   *within* a verb bucket) + `--similarity` flag + tests.
-4. **V2 step 3:** TF-IDF + cosine grouper as fallback, composed last. Goal:
+3. ✅ **V2 step 2 (DONE):** `LevenshteinGrouper` (pure DP + greedy seed-and-fold,
+   blocks by bank) composed as `SemanticVerbGrouper.within` to merge
+   near-identical wording *within* a verb bucket. Opt-in `--group=levenshtein`,
+   `--similarity=` threshold (default 0.9) + tests.
+4. **V2 step 3 (NEXT):** TF-IDF + cosine grouper as fallback, composed last. Goal:
    integrated and producing families (correctness, not tuning).
 5. **V3:** tune thresholds/tokenization/synonyms on real `adb` corpora; fuzzy
    grouping UX; parser health dashboards; bank-specific reports.
