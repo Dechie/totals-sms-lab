@@ -91,21 +91,32 @@ See "Coverage history" below.
 
 ---
 
-## 3. V2 — Similarity engines: implement & plug in (Levenshtein + TF-IDF + cosine)
+## 3. V2 — Similarity engines: implement & plug in (action-verb → Levenshtein → TF-IDF/cosine)
 
-**Scope:** implement all three classical similarity algorithms and integrate
-them into the pipeline behind the `SimilarityGrouper` seam, producing
-`TemplateFamily` objects. V2's bar is **correctness + integration** — the engines
-working end-to-end and grouping templates into families. *Tuning* them on real
+**Scope:** implement the grouping engines behind the `SimilarityGrouper` seam,
+producing `TemplateFamily` objects. V2's bar is **correctness + integration** —
+engines working end-to-end and grouping templates into families. *Tuning* on real
 data, fuzzy-grouping polish, dashboards and bank-specific reports are **V3**;
 polished semantic families and trends are **V4**.
 
-The algorithms (Algorithm 1 — exact normalization + hashing — already shipped in
-V1):
-- **Levenshtein distance** — merge near-identical templates (typos / minor
-  wording: "Transferred …" vs "Transfer of …").
-- **TF-IDF vectorization + cosine similarity** — merge *semantically* related
-  templates Levenshtein misses ("credited" / "deposited" / "funds received").
+**Sequencing (locked):** lead with the cheapest, most deterministic method and
+only escalate for what it misses. Algorithm 1 (exact normalization + hashing)
+already shipped in V1.
+1. **Action-verb grouping — PRIMARY.** An `Annotator` tags each template with an
+   `actionVerb` from `action_words.txt` (`null` if none) — see
+   ENRICHMENT_FIELDS.md. Group by verb + direction (credited/received/deposited →
+   *incoming*; debited/paid/transferred/withdrawn → *outgoing*). Deterministic,
+   O(n) lookup, zero training — does most of the semantic work *and* labels the
+   family for free. This supersedes the older "Levenshtein first" plan.
+2. **Levenshtein — near-identical wording.** Within a verb bucket, merge "typo"
+   variants ("Transferred …" vs "Transfer of …") by edit-distance ratio.
+3. **TF-IDF + cosine — FALLBACK.** Only for synonyms the lexicon + Levenshtein
+   miss. Statistically weak on tiny corpora, so intentionally last, not the
+   workhorse.
+
+Also carry the enrichment fields (`actionVerb`, `shapeProfile`) on the family —
+they feed grouping, labels, export, and the V5 regex suggester
+(ENRICHMENT_FIELDS.md / FIELD_SHAPES.md).
 
 **Why it matters for the founding insight:** large-scale discovery only pays off
 if the long tail of never-covered variants collapses into a short, rankable list
@@ -127,8 +138,8 @@ the grouper returns families, `CoverageAnalyzer` builds them (per-bank for
 attributed; separately for candidates), `CoverageReport` exposes
 `attributedFamilies`/`candidateFamilies`, and console/Markdown/HTML render
 families with dormant multi-member drill-down. `IdentityGrouper` is still the
-default so V1 output is byte-identical. **Next: the Levenshtein grouper (step 1).**
-The original checklist, for reference:
+default so V1 output is byte-identical. **Next: the `Annotator` + action-verb
+grouper (step 1).** The original checklist, for reference:
 1. **Introduce `TemplateFamily`** (suggested shape):
    ```dart
    class TemplateFamily {
@@ -152,31 +163,44 @@ The original checklist, for reference:
    `TemplateCluster.priority`). The recipient-name-varying CBE transfer templates
    are the canonical case that under-ranks today — verify they collapse.
 
+### Algorithm notes — action-verb lexicon (primary)
+- New `Annotator` (post-normalization): scan the (lower-cased) template against
+  `action_words.txt`; set `actionVerb` = the primary match (first-match, or a
+  direction/priority order when several appear), else `null`. It's a **tag, not a
+  strip** — the verb stays in the template.
+- `SemanticVerbGrouper` (a `SimilarityGrouper`): within a bank, bucket clusters by
+  `actionVerb` (and direction). O(n), deterministic, zero training; the verb also
+  supplies the family `label`.
+- `actionVerb == null` on a transactional-looking template ⇒ candidate **new
+  action word** — surface it (self-improving lexicon).
+
 ### Algorithm notes — Levenshtein
 - Standard two-row DP, pure Dart. Normalize by max length → similarity ratio;
   merge when `ratio ≥ threshold` (start ~0.9, expose as `--similarity=`).
+- Runs **within a verb bucket** to merge near-identical wording.
 - Cluster greedily: sort templates by occurrence desc; each becomes a family seed;
   fold in any unseeded template within threshold. Deterministic given the sort.
 - **Block by `likelyBankId`** before pairwise — never merge across banks.
 
-### Algorithm notes — TF-IDF + cosine
-- A second `SimilarityGrouper` impl. Compose *after* Levenshtein (typos first,
-  then synonyms). Same `TemplateFamily` contract.
+### Algorithm notes — TF-IDF + cosine (fallback)
+- A `SimilarityGrouper` impl. Compose *after* the lexicon + Levenshtein (only for
+  synonyms they miss). Same `TemplateFamily` contract.
 - Tokenize normalized templates (split on non-word; drop placeholders or treat
   them as stop-tokens), build term-frequency vectors, idf over the template
   corpus, cosine similarity, merge ≥ threshold. All pure-Dart vector math,
   deterministic.
-- **Caveat — this is exactly why tuning is V3:** the corpus is tiny (a handful of
-  templates per bank), so TF-IDF is statistically weak out of the box. In V2 get
-  it *working and wired in*; in V3 tune it on real data — keep it a secondary
-  signal on top of Levenshtein, threshold conservatively, and consider a small
-  curated synonym list for banking verbs (credit/debit/transfer/deposit/withdraw)
-  as a cheaper complement.
+- **Caveat — why it's the fallback, not the workhorse:** the corpus is tiny (a
+  handful of templates per bank), so TF-IDF is statistically weak. The
+  `action_words.txt` lexicon does the reliable semantic grouping deterministically;
+  TF-IDF only mops up synonyms the lexicon misses. Tune it in V3 (thresholds,
+  tokenization); keep it conservative.
 
 ### Tests
+- `Annotator`: tags the right `actionVerb` (and `null`) across the lexicon;
+  picks a sensible primary when several verbs appear.
 - Pure functions: Levenshtein distance/ratio; TF-IDF + cosine on known vectors.
-- Grouper merges `Transferred <AMOUNT>` / `Transfer of <AMOUNT>`; does NOT merge
-  unrelated templates; never merges across banks.
+- Grouper merges `Transferred <AMOUNT>` / `Transfer of <AMOUNT>` (same verb
+  bucket); does NOT merge different verbs/unrelated templates; never across banks.
 - Pipeline/report family-aware snapshot on `example/cbe_sms.json` (the transfer
   family should collapse the current `×1` fragments).
 
@@ -330,15 +354,20 @@ map to named capture groups.
 1. ✅ **V2 step 0 (DONE):** introduced `TemplateFamily`, fixed the ignored grouper
    return, made `CoverageReport` + reports family-aware (IdentityGrouper = one
    family per cluster, output unchanged). Applied to both unmatched streams.
-2. **V2 step 1 (NEXT):** Levenshtein grouper + `--similarity` flag + tests.
-3. **V2 step 2:** TF-IDF + cosine grouper, composed after Levenshtein. Goal:
+2. **V2 step 1 (NEXT):** `Annotator` (tag `actionVerb` from `action_words.txt`) +
+   `SemanticVerbGrouper` (bucket by verb + direction, sets family label) + tests.
+   The primary, deterministic grouper.
+3. **V2 step 2:** Levenshtein grouper (merge near-identical wording *within* a
+   verb bucket) + `--similarity` flag + tests.
+4. **V2 step 3:** TF-IDF + cosine grouper as fallback, composed last. Goal:
    integrated and producing families (correctness, not tuning).
-4. **V3:** tune thresholds/tokenization/synonyms on real `adb` corpora; fuzzy
+5. **V3:** tune thresholds/tokenization/synonyms on real `adb` corpora; fuzzy
    grouping UX; parser health dashboards; bank-specific reports.
-5. **V4:** polished semantic families; coverage-history store + `datasetId`;
+6. **V4:** polished semantic families; coverage-history store + `datasetId`;
    `trend` command.
-6. **V5:** regex suggestion (needs families) → `compare` (needs coverage history +
-   fingerprints) → interactive HTML (relax the no-JS test) → plugin config.
+7. **V5:** regex suggestion (needs families + `shapeProfile`) → `compare` (needs
+   coverage history + fingerprints) → interactive HTML (relax the no-JS test) →
+   plugin config.
 
 Each step is additive and independently shippable. Update this file as you go.
 

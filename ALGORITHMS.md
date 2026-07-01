@@ -1,20 +1,30 @@
 # Algorithms (V2) — skeletal
 
-> Starter notes for the V2 similarity engines. Deliberately thin — flesh out with
-> real formulas, thresholds, and benchmarks while building V2. See ROADMAP_NOTES §3
-> (plan) and INSIGHTS.md (why: discrete, regex-ready categories). All stages work
-> on **normalized templates**, not raw bodies.
+> Starter notes for V2's grouping. Thin on purpose — flesh out during V2. See
+> ROADMAP_NOTES §3 (plan), ENRICHMENT_FIELDS.md (`actionVerb`/`shapeProfile`),
+> action_words.txt (lexicon), INSIGHTS.md (why). All stages work on **normalized
+> templates**, not raw bodies, and group **within a bank** (never across).
 
-**Pipeline:** normalize → hash (exact) → Levenshtein (near-identical) → TF-IDF + cosine (semantic).
+**Pipeline:** normalize → hash (exact) → **action-verb bucket** → Levenshtein
+(typos) → TF-IDF + cosine (fallback).
 
-- **Normalization** *(V1)* — replace variable data with placeholders (`<AMOUNT>`, `<NAME>`, …); collapses thousands of messages into a few skeletons.
-- **Hashing / exact clustering** *(V1)* — group identical templates via a string-keyed map. O(n), deterministic.
-- **Levenshtein** *(V2)* — edit distance → similarity ratio (1 − dist/maxLen); merge ≥ threshold. Catches typos / minor wording ("Transferred" vs "Transfer of"). Two-row DP, pure Dart.
-- **TF-IDF** *(V2)* — tokenize templates; term-freq × inverse-doc-freq over the corpus → a weighted vector per template.
-- **Cosine similarity** *(V2)* — angle between two TF-IDF vectors (dot / (‖a‖·‖b‖)), 0..1; merge ≥ threshold. Catches synonyms Levenshtein misses ("credited" / "deposited").
+- **Normalization** *(V1)* — values → placeholders (`<AMOUNT>`, `<NAME>`, …).
+- **Hashing / exact clustering** *(V1)* — identical templates grouped by string key. O(n).
+- **Action-verb grouping** *(V2 — PRIMARY)* — an `Annotator` tags each template
+  with an `actionVerb` from action_words.txt (`null` if none); bucket by verb +
+  direction (incoming/outgoing). Deterministic, O(n) lookup, zero training — does
+  most of the semantic work cheaply and labels the family for free. `null` on a
+  transactional-looking template = candidate new action word.
+- **Levenshtein** *(V2)* — merge near-identical wording *within a verb bucket*
+  ("Transferred" vs "Transfer of"); edit-distance ratio ≥ threshold. Two-row DP.
+- **TF-IDF + cosine** *(V2 — FALLBACK)* — only for synonyms the lexicon +
+  Levenshtein miss; weighted token vectors, cosine ≥ threshold. Weak on tiny
+  corpora, so intentionally last, not the workhorse.
 
-**Thresholds** — Levenshtein ~0.9, cosine TBD (tuned on real corpora in V3); expose via `--similarity`. Always block by `likelyBankId` first — never merge across banks.
+**Enrichment** — beside the template carry `actionVerb` (semantic label, a tag —
+never stripped) and `shapeProfile` (per-field quasi-regex, privacy-safe). Feed
+grouping, family labels, export, and the V5 regex suggester.
 
-**Complexity** — over *k distinct templates* (small after normalization), not n messages: Levenshtein O(k²·L), TF-IDF O(k·tokens), cosine O(k²·dims).
-
-**Why not ML (for now)** — deterministic, reproducible, zero-dependency, no labeled data or training, easy to contribute to. The goal is *discovering* gaps, not classifying; classical methods suffice. Revisit only if they plateau (evidence here first).
+**Thresholds** — Levenshtein ~0.9, cosine TBD (tune in V3); expose `--similarity`. Block by bank.
+**Complexity** — over *k distinct templates* (small): verb bucket O(k); Levenshtein O(k²·L); TF-IDF O(k²·dims).
+**Why not ML (for now)** — deterministic, reproducible, zero-dep, no training/labels; classical + a curated lexicon suffice. Revisit only if they plateau (evidence here first).
