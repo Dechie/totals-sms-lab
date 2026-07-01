@@ -51,6 +51,11 @@ class TemplateCluster {
   /// generalizes them into a privacy-safe regex (see [shapeProfile]).
   final Map<String, List<String>> fieldSpans;
 
+  /// At least one member message had a degraded normalization (a rule failed),
+  /// so anonymization of this cluster's template isn't guaranteed. Export
+  /// redacts degraded clusters rather than risk leaking a raw value.
+  bool degraded;
+
   TemplateCluster({
     required this.template,
     required this.occurrences,
@@ -61,6 +66,7 @@ class TemplateCluster {
     this.actionVerb,
     this.direction,
     Map<String, List<String>>? fieldSpans,
+    this.degraded = false,
   })  : examples = examples ?? <String>[],
         fieldSpans = fieldSpans ?? const {};
 

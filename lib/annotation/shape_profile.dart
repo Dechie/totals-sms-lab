@@ -38,6 +38,11 @@ class ShapeProfiler {
   /// back to a coarse class.
   static const maxAlternatives = 4;
 
+  /// Samples longer than this are truncated before shape derivation, to bound
+  /// the work on a pathological value. The grammar of the head is representative
+  /// enough for a coarse class.
+  static const maxSampleLen = 512;
+
   /// Profile every field in [spansByField]; fields with no spans are skipped.
   static Map<String, FieldShape> profileAll(
       Map<String, List<String>> spansByField) {
@@ -53,8 +58,25 @@ class ShapeProfiler {
   }
 
   /// Generalize a single field's raw [samples] into a [FieldShape].
-  static FieldShape profile(List<String> samples) {
-    final n = samples.length;
+  ///
+  /// Total by contract: any unexpected input degrades to a coarse `.+` (with the
+  /// real sample count) rather than throwing or emitting a misleading exact
+  /// shape — an honest "some value here, structure unknown".
+  static FieldShape profile(List<String> rawSamples) {
+    try {
+      return _profile(rawSamples);
+    } catch (_) {
+      return FieldShape('.+', rawSamples.length);
+    }
+  }
+
+  static FieldShape _profile(List<String> rawSamples) {
+    final n = rawSamples.length;
+    // Bound work on pathological values.
+    final samples = [
+      for (final s in rawSamples)
+        s.length > maxSampleLen ? s.substring(0, maxSampleLen) : s
+    ];
     final distinct = samples.toSet();
 
     // Too few distinct values to generalize safely → coarse "one or more".

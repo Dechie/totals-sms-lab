@@ -133,6 +133,28 @@ shapeProfile, count, bank, matched}`; raw spans are local-only, greeting names
 stripped, `--preview` to review). This is the contributor data-collection path
 that feeds V3 tuning and the §9.2 corpus.
 
+**Robustness + baseline/dataset stamping (export/corpus hardening).** The whole
+load→parse→normalize→export path is built to **degrade, never crash, and never
+fabricate** — the export must maximize real-data richness from unknown-unknown
+inputs without emitting misleading data:
+- Every stage is isolated and total: `DatasetLoader` skips malformed
+  records/lines; `Normalizer` caps body length + wraps each rule (degraded/
+  truncated flags, never throws); `ShapeProfiler` caps sample length + degrades
+  to a coarse `.+` (never a fingerprint); `AnalysisPipeline` parses each message
+  in a `try/catch` (a throwing host regex → counted unmatched, never dropped);
+  `EnrichmentExport` builds each unit in isolation and **redacts** degraded
+  families (count survives, untrusted text/shape withheld).
+- A `DataQuality` tally (`lib/models/data_quality.dart`) rides the whole run and
+  is embedded in the export, so a partial run is never mistaken for a complete
+  one (`clean` flag + per-stage counters).
+- The export doc (schema **v2**) is stamped with the parser **`baselineSignature`**
+  (drift/regression key — identical to `baseline`/`diff`) and a **`datasetId`**
+  (corpus content hash — identical to the `corpus` command) plus a `coverage`
+  snapshot mirroring the §5 coverage-history schema. `corpus` output is now a
+  self-describing object (`{version, datasetId, baselineSignature, …, messages}`)
+  that still loads via the `messages` key — so **corpus → export → coverage all
+  share the same baseline + dataset keys**, wiring discovery to baseline/drift.
+
 **Why it matters for the founding insight:** large-scale discovery only pays off
 if the long tail of never-covered variants collapses into a short, rankable list
 of *distinct* gaps — otherwise "read thousands of messages" just produces
@@ -468,9 +490,13 @@ realistically means **aggregating across devices/contributors/time**.
   datasets into one, dedups by `(address, body)`, and stamps a stable
   **`datasetId`** (`fnv1a64` over sorted keys) — coverage now reflects the union
   of what's been seen, not one phone.
+- ✅ **Also shipped:** `corpus` output is self-describing (`datasetId` +
+  `baselineSignature` + counts + `messages`) and the `export` artifact carries
+  the same `datasetId`/`baselineSignature` + a coverage snapshot — the keys the
+  V4 coverage-history (§5) needs to compare like-for-like are already emitted.
 - **Deepen later:** persistent corpus store (append new pulls over time, track
-  growth), per-source provenance in the output, and wiring `datasetId` into the
-  V4 coverage-history (§5) so trend/regression compare like-for-like.
+  growth), per-source provenance in the output, and consuming those keys in the
+  V4 coverage-history ledger.
 
 ### 9.3 Discovery metrics alongside coverage
 Coverage % is a quality/drift metric. Discovery also wants: **distinct unseen

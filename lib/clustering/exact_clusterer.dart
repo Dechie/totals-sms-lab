@@ -1,3 +1,4 @@
+import '../models/data_quality.dart';
 import '../models/parse_result.dart';
 import '../models/template_cluster.dart';
 import '../normalizer/normalizer.dart';
@@ -19,15 +20,30 @@ class ExactClusterer {
       : _normalizer = normalizer ?? Normalizer();
 
   /// Cluster the unmatched subset of [results].
-  List<TemplateCluster> clusterUnmatched(Iterable<ParseResult> results) {
+  ///
+  /// Resilient: a message the normalizer can't handle is skipped (and tallied
+  /// in [quality]) rather than crashing the run or fabricating a template — we
+  /// never invent shape data. Degraded (partially-anonymized) normalizations
+  /// still cluster but mark the cluster so export can redact it.
+  List<TemplateCluster> clusterUnmatched(Iterable<ParseResult> results,
+      {DataQuality? quality}) {
     final unmatched = results.where((r) => !r.matched);
 
     final byTemplate = <String, _Bucket>{};
     for (final r in unmatched) {
-      final norm = _normalizer.normalizeWithSpans(r.message.body);
+      NormalizationResult norm;
+      try {
+        norm = _normalizer.normalizeWithSpans(r.message.body);
+      } catch (_) {
+        // Normalizer is designed not to throw; this is a last-resort backstop.
+        quality?.clusteringSkipped++;
+        continue;
+      }
+      if (norm.degraded) quality?.normalizationDegraded++;
+      if (norm.truncated) quality?.normalizationTruncated++;
       final bucket =
           byTemplate.putIfAbsent(norm.template, () => _Bucket(norm.template));
-      bucket.add(r, norm.spans, maxExamples);
+      bucket.add(r, norm.spans, maxExamples, degraded: norm.degraded);
     }
 
     final clusters = byTemplate.values
@@ -54,11 +70,14 @@ class _Bucket {
   // (a few hundred samples is far more than enough to generalize a shape).
   static const _maxSpansPerField = 500;
   final Map<String, List<String>> fieldSpans = {};
+  bool degraded = false;
 
   _Bucket(this.template);
 
-  void add(ParseResult r, Map<String, List<String>> spans, int maxExamples) {
+  void add(ParseResult r, Map<String, List<String>> spans, int maxExamples,
+      {bool degraded = false}) {
     count++;
+    if (degraded) this.degraded = true;
     if (examples.length < maxExamples) {
       examples.add(r.message.body.trim());
     }
@@ -92,6 +111,7 @@ class _Bucket {
       likelyBankId: likelyBankId,
       likelyBankName: likelyBankId == null ? null : bankNames[likelyBankId],
       fieldSpans: fieldSpans,
+      degraded: degraded,
     );
   }
 }

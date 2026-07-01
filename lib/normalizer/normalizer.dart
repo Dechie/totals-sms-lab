@@ -96,6 +96,13 @@ class Normalizer {
     _Rule('<NUM>', RegExp(r'\b\d[\d,]*(?:\.\d+)?\b')),
   ];
 
+  /// Bodies longer than this are truncated before normalization. Real SMS are
+  /// ~a few hundred chars; a multi-KB body is either concatenated junk or a
+  /// crafted input that could make a regex pathological. The transaction text
+  /// is virtually always in the head, so truncating loses little and bounds the
+  /// work per message. Marked as `truncated` on the result.
+  static const _maxBodyLen = 8000;
+
   /// Returns the normalized template for [body].
   String normalize(String body) => normalizeWithSpans(body).template;
 
@@ -110,14 +117,31 @@ class Normalizer {
   /// that claimed it (later rules only see placeholders, never raw values).
   NormalizationResult normalizeWithSpans(String body) {
     final spans = <String, List<String>>{};
+    var truncated = false;
+    var degraded = false;
+
     var text = body;
-    for (final rule in _rules) {
-      text = text.replaceAllMapped(rule.regex, (m) {
-        (spans[rule.field] ??= <String>[]).add(m[0]!);
-        return rule.placeholder;
-      });
+    if (text.length > _maxBodyLen) {
+      text = text.substring(0, _maxBodyLen);
+      truncated = true;
     }
-    return NormalizationResult(_collapseWhitespace(text), spans);
+
+    for (final rule in _rules) {
+      // Isolate each rule: a single pathological input must not lose the work
+      // of the other rules (or crash the run). A failed rule leaves its target
+      // un-stripped, so the result is marked degraded — callers that care about
+      // anonymization (export) redact it rather than risk leaking a raw value.
+      try {
+        text = text.replaceAllMapped(rule.regex, (m) {
+          (spans[rule.field] ??= <String>[]).add(m[0]!);
+          return rule.placeholder;
+        });
+      } catch (_) {
+        degraded = true;
+      }
+    }
+    return NormalizationResult(_collapseWhitespace(text), spans,
+        degraded: degraded, truncated: truncated);
   }
 
   String _collapseWhitespace(String s) =>
@@ -131,7 +155,16 @@ class Normalizer {
 class NormalizationResult {
   final String template;
   final Map<String, List<String>> spans;
-  const NormalizationResult(this.template, this.spans);
+
+  /// A normalization rule failed on this body — anonymization is not guaranteed,
+  /// so the template must not be trusted or exported verbatim.
+  final bool degraded;
+
+  /// The body was truncated to a safe length before normalization.
+  final bool truncated;
+
+  const NormalizationResult(this.template, this.spans,
+      {this.degraded = false, this.truncated = false});
 }
 
 class _Rule {

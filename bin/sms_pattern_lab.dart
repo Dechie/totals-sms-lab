@@ -8,6 +8,7 @@ import 'package:sms_pattern_lab/baseline/logic_fidelity.dart';
 import 'package:sms_pattern_lab/baseline/parser_baseline.dart';
 import 'package:sms_pattern_lab/corpus/corpus.dart';
 import 'package:sms_pattern_lab/export/enrichment_export.dart';
+import 'package:sms_pattern_lab/models/data_quality.dart';
 import 'package:sms_pattern_lab/models/coverage_report.dart';
 import 'package:sms_pattern_lab/models/sms_message.dart';
 import 'package:sms_pattern_lab/models/template_family.dart';
@@ -127,9 +128,38 @@ SimilarityGrouper _grouper(_Args args) {
 /// across contributors. Writes JSON to --out; `--preview` also prints a
 /// human-readable summary so a contributor can review before sending.
 void _runExport(_Args args) {
-  final result = _analyze(args);
-  final doc =
-      EnrichmentExport.build(result.coverage, parserName: result.parserName);
+  // One quality tally owned end-to-end (load → parse → normalize → export), so
+  // the exported artifact carries an honest account of its own completeness.
+  final quality = DataQuality();
+  final adapter = _resolveAdapter(args);
+  final messages = _loadMessages(args, quality: quality);
+
+  final baseline = adapter.baseline(sourceLabel: _snapshotProvenance());
+  // Same content hash the `corpus` command emits — the like-for-like key.
+  final datasetId = Corpus.merge([messages]).datasetId;
+
+  stdout.writeln('Parser: ${adapter.name} '
+      '(${adapter.bankCount} banks, ${adapter.patternCount} patterns)');
+  stdout.writeln('Baseline: ${baseline.signature}'
+      '${baseline.sourceLabel == null ? '' : ' (${baseline.sourceLabel})'}');
+  stdout.writeln('Dataset id: $datasetId');
+
+  final grouping = args.grouping;
+  final result = AnalysisPipeline(adapter: adapter, grouper: _grouper(args))
+      .run(messages, quality: quality);
+
+  final doc = EnrichmentExport.build(
+    result.coverage,
+    parserName: result.parserName,
+    baselineSignature: baseline.signature,
+    baselineSource: baseline.sourceLabel,
+    datasetId: datasetId,
+    generatedAt: DateTime.now().toIso8601String(),
+    grouping: grouping,
+    similarity:
+        (grouping == 'levenshtein' || grouping == 'lev') ? args.similarity : null,
+    quality: quality,
+  );
 
   if (args.preview) {
     stdout.writeln('');
@@ -141,13 +171,13 @@ void _runExport(_Args args) {
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(
       '${const JsonEncoder.withIndent('  ').convert(doc)}\n');
-  stdout.writeln('\n📦 Enrichment export written to $outPath '
-      '(${doc['unitCount']} unit(s), no raw values).');
+  stdout.writeln('\n📦 Enrichment export → $outPath '
+      '(${doc['unitCount']} unit(s), no raw values; quality: ${quality.summary()}).');
 }
 
 /// Load the dataset for an analysis command from either `--adb` (live device)
 /// or a dataset file argument.
-List<SmsMessage> _loadMessages(_Args args) {
+List<SmsMessage> _loadMessages(_Args args, {DataQuality? quality}) {
   if (args.adb) {
     final messages = _pullFromDevice(args);
     if (messages.isEmpty) {
@@ -165,11 +195,15 @@ List<SmsMessage> _loadMessages(_Args args) {
         'connected device. Usage: sms-pattern-lab ${args.command} '
         '<dataset.json>');
   }
-  final messages = DatasetLoader.load(datasetPath);
+  final messages = DatasetLoader.load(datasetPath, quality: quality);
   if (messages.isEmpty) {
     throw _CliError('Dataset "$datasetPath" contained no usable messages.');
   }
-  stdout.writeln('Loaded ${messages.length} message(s) from $datasetPath');
+  final skipped = quality == null
+      ? 0
+      : quality.datasetMalformed + quality.datasetEmptyBodies;
+  stdout.writeln('Loaded ${messages.length} message(s) from $datasetPath'
+      '${skipped > 0 ? ' ($skipped record(s) skipped as malformed/empty)' : ''}');
   return messages;
 }
 
@@ -768,15 +802,38 @@ void _runCorpus(_Args args) {
     throw _CliError('corpus needs at least two dataset files to merge.\n'
         'Usage: sms-pattern-lab corpus a.json b.json [...] [--out=corpus.json]');
   }
-  final sources = [for (final p in args.positional) DatasetLoader.load(p)];
+  final quality = DataQuality();
+  final sources = [
+    for (final p in args.positional) DatasetLoader.load(p, quality: quality)
+  ];
   final result = Corpus.merge(sources);
+
+  // Stamp the corpus with the parser baseline it's meant to be analyzed
+  // against (best-effort — the corpus itself is parser-agnostic), so a merged
+  // corpus, its datasetId, and later exports/coverage all share the same
+  // baseline + dataset keys. This is the corpus↔baseline↔drift tie-in.
+  String? baselineSignature;
+  String? baselineSource;
+  try {
+    final b = _resolveAdapter(args).baseline(sourceLabel: _snapshotProvenance());
+    baselineSignature = b.signature;
+    baselineSource = b.sourceLabel;
+  } catch (_) {/* no parser definitions available; signature stays null */}
 
   final outPath = args.out ?? 'build/corpus.json';
   _writeFile(
       outPath,
-      '${const JsonEncoder.withIndent('  ').convert([
-            for (final m in result.messages) m.toJson()
-          ])}\n');
+      '${const JsonEncoder.withIndent('  ').convert({
+            'version': 1,
+            'datasetId': result.datasetId,
+            if (baselineSignature != null) 'baselineSignature': baselineSignature,
+            if (baselineSource != null) 'baselineSource': baselineSource,
+            'sourceCount': args.positional.length,
+            'totalInput': result.totalInput,
+            'unique': result.uniqueCount,
+            'duplicatesRemoved': result.duplicatesRemoved,
+            'messages': [for (final m in result.messages) m.toJson()],
+          })}\n');
 
   stdout.writeln('Merged ${args.positional.length} source(s):');
   for (var i = 0; i < args.positional.length; i++) {
@@ -787,7 +844,14 @@ void _runCorpus(_Args args) {
   stdout.writeln('Total in  : ${result.totalInput}');
   stdout.writeln('Unique    : ${result.uniqueCount} '
       '(${result.duplicatesRemoved} duplicate(s) removed)');
+  if (quality.datasetMalformed + quality.datasetEmptyBodies > 0) {
+    stdout.writeln('Skipped   : ${quality.datasetMalformed} malformed, '
+        '${quality.datasetEmptyBodies} empty');
+  }
   stdout.writeln('Dataset id: ${result.datasetId}');
+  if (baselineSignature != null) {
+    stdout.writeln('Baseline  : $baselineSignature');
+  }
   stdout.writeln('Wrote corpus → $outPath');
 
   if (args.analyzeAfter) {

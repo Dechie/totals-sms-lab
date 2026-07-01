@@ -1,6 +1,7 @@
 import '../clustering/exact_clusterer.dart';
 import '../coverage/coverage_analyzer.dart';
 import '../models/coverage_report.dart';
+import '../models/data_quality.dart';
 import '../models/parse_result.dart';
 import '../models/sms_message.dart';
 import '../parser_adapter/parser_adapter.dart';
@@ -17,11 +18,16 @@ class AnalysisResult {
   /// coupled to a specific project name. See ROADMAP_NOTES.md (V5 plugins).
   final String parserName;
 
+  /// What went wrong or degraded during the run (0s on a clean run). Lets the
+  /// export be honest about its own completeness.
+  final DataQuality quality;
+
   const AnalysisResult({
     required this.parseResults,
     required this.coverage,
     required this.statistics,
     required this.parserName,
+    required this.quality,
   });
 }
 
@@ -52,18 +58,36 @@ class AnalysisPipeline {
     );
   }
 
-  AnalysisResult run(List<SmsMessage> messages) {
+  AnalysisResult run(List<SmsMessage> messages, {DataQuality? quality}) {
+    final q = quality ?? DataQuality();
+    q.messagesLoaded = messages.length;
+
     // Every message is parsed and counted — coverage reflects the whole
     // dataset. Non-transaction *noise* is separated downstream (in the
     // CoverageReport's candidate vs noise split), not dropped here.
-    final parseResults = adapter.parseAll(messages);
-    final coverage = _coverage.analyze(parseResults);
+    //
+    // Parse each message in isolation: a host-parser regex that throws on one
+    // pathological body must not sink the whole run. A failed parse is counted
+    // as unmatched (honest denominator) — never dropped, never fabricated as a
+    // match.
+    final parseResults = <ParseResult>[];
+    for (final m in messages) {
+      try {
+        parseResults.add(adapter.parse(m));
+      } catch (_) {
+        q.parseErrors++;
+        parseResults.add(ParseResult(message: m, matched: false));
+      }
+    }
+
+    final coverage = _coverage.analyze(parseResults, quality: q);
     final stats = DatasetStatistics.from(parseResults);
     return AnalysisResult(
       parseResults: parseResults,
       coverage: coverage,
       statistics: stats,
       parserName: adapter.name,
+      quality: q,
     );
   }
 }

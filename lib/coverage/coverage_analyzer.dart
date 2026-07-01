@@ -1,4 +1,5 @@
 import '../models/coverage_report.dart';
+import '../models/data_quality.dart';
 import '../models/parse_result.dart';
 import '../models/template_cluster.dart';
 import '../models/template_family.dart';
@@ -23,14 +24,14 @@ class CoverageAnalyzer {
   })  : clusterer = clusterer ?? ExactClusterer(),
         grouper = grouper ?? IdentityGrouper();
 
-  CoverageReport analyze(List<ParseResult> results) {
+  CoverageReport analyze(List<ParseResult> results, {DataQuality? quality}) {
     final total = results.length;
     final matched = results.where((r) => r.matched).length;
     final unattributed =
         results.where((r) => !r.matched && r.isUnattributed).length;
 
     // Cluster unmatched messages once; reuse for both global and per-bank.
-    final clusters = clusterer.clusterUnmatched(results);
+    final clusters = clusterer.clusterUnmatched(results, quality: quality);
 
     // Per-bank tallies.
     final totalsByBank = <int, int>{};

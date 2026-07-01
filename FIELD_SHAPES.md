@@ -13,6 +13,12 @@
 > `export` command (`lib/export/enrichment_export.dart`). Raw spans are
 > **local-only and never exported**. A greeting-name strip ("Dear <NAME>") was
 > added to the normalizer so the account holder's own name can't leak.
+>
+> **Robustness:** `ShapeProfiler` is *total* — it caps sample length and
+> degrades any unexpected input to a coarse `.+` (with the true sample count)
+> rather than throwing or emitting a misleading exact shape. See ROADMAP_NOTES
+> §3 "Robustness + baseline/dataset stamping" for the full degrade-never-crash
+> contract across the export pipeline.
 
 ## Idea
 For every placeholder the normalizer inserts (`<AMOUNT>`, `<NAME>`, …), also
