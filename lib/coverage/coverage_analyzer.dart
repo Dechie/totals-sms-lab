@@ -1,6 +1,7 @@
 import '../models/coverage_report.dart';
 import '../models/data_quality.dart';
 import '../models/parse_result.dart';
+import '../models/success_family.dart';
 import '../models/template_cluster.dart';
 import '../models/template_family.dart';
 import '../parser_adapter/parser_adapter.dart';
@@ -27,11 +28,24 @@ class CoverageAnalyzer {
   CoverageReport analyze(List<ParseResult> results, {DataQuality? quality}) {
     final total = results.length;
     final matched = results.where((r) => r.matched).length;
+    final appAccepted = results.where((r) => r.appAccepted).length;
     final unattributed =
         results.where((r) => !r.matched && r.isUnattributed).length;
 
     // Cluster unmatched messages once; reuse for both global and per-bank.
     final clusters = clusterer.clusterUnmatched(results, quality: quality);
+
+    // Cluster the matched set separately and group per bank/pattern (distinct
+    // patterns → distinct normalized templates → distinct families). Each
+    // family carries folded extraction health → a scored `successUnit`.
+    final matchedClusters = clusterer.clusterMatched(results, quality: quality);
+    final successFamilies = _groupPerBank(matchedClusters)
+        .map(SuccessFamily.fromFamily)
+        .toList()
+      ..sort((a, b) {
+        final byScore = b.healthScore.compareTo(a.healthScore);
+        return byScore != 0 ? byScore : b.count.compareTo(a.count);
+      });
 
     // Per-bank tallies.
     final totalsByBank = <int, int>{};
@@ -99,6 +113,8 @@ class CoverageAnalyzer {
       noiseClusters: noiseClusters,
       attributedFamilies: attributedFamilies,
       candidateFamilies: candidateFamilies,
+      successFamilies: successFamilies,
+      appAccepted: appAccepted,
     );
   }
 

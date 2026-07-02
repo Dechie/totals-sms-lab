@@ -6,6 +6,7 @@ import '../models/bank.dart';
 import '../models/parse_result.dart';
 import '../models/sms_message.dart';
 import '../models/sms_pattern.dart';
+import 'field_extractor.dart';
 import 'parser_adapter.dart';
 
 /// Adapter that reproduces Totals' parsing decision using its own data files:
@@ -162,21 +163,45 @@ class TotalsParserAdapter implements ParserAdapter {
     // Mirror Totals' `cleanSmsText` (which is `text.trim()`) before matching.
     final body = message.body.trim();
     final candidates = _candidatesFor(message);
+    final messageDate = message.dateMillis == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(message.dateMillis!);
+
+    // Mirror the app's iterate-until-accept loop (pattern_parser.dart:15-194):
+    // the first pattern whose regex matches AND whose extraction passes the
+    // accept-gate wins. If a pattern matches but the gate rejects it, remember
+    // the first such match and keep trying — a later pattern may still accept.
+    ParseResult? firstMatchedButRejected;
     for (final p in candidates) {
       final re = p.regExp;
       if (re == null) continue;
-      if (re.hasMatch(body)) {
-        final bank = _banksById[p.bankId];
-        return ParseResult(
-          message: message,
-          matched: true,
-          bankId: p.bankId,
-          bankName: bank?.shortName ?? bank?.name,
-          transactionType: p.type,
-          matchedPatternDescription: p.description,
-        );
-      }
+      final match = re.firstMatch(body);
+      if (match == null) continue;
+
+      final bank = _banksById[p.bankId];
+      final outcome = FieldExtractor.extract(
+        match: match,
+        body: body,
+        pattern: p,
+        bank: bank,
+        messageDate: messageDate,
+      );
+      final result = ParseResult(
+        message: message,
+        matched: true,
+        bankId: p.bankId,
+        bankName: bank?.shortName ?? bank?.name,
+        transactionType: p.type,
+        matchedPatternDescription: p.description,
+        extraction: outcome,
+      );
+      if (outcome.accepted) return result;
+      firstMatchedButRejected ??= result;
     }
+    // A regex matched but the app's gate would drop every candidate: still
+    // matched (regex coverage unchanged), but appAccepted == false.
+    if (firstMatchedButRejected != null) return firstMatchedButRejected;
+
     // Unmatched: still try to attribute a bank from the sender.
     final bank = _bankForSender(message.address);
     return ParseResult(

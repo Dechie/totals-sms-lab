@@ -41,6 +41,24 @@ void main() {
     expect(salaryCluster.first.occurrences, greaterThan(1));
   });
 
+  test('successFamilies + appAccepted are populated for matched messages', () {
+    if (adapter == null) return;
+    final messages = DatasetLoader.load('example/sample_sms.json');
+    final cov = AnalysisPipeline(adapter: adapter).run(messages).coverage;
+
+    // appAccepted (usable transactions) can never exceed regex-matched.
+    expect(cov.appAccepted, lessThanOrEqualTo(cov.matched));
+    expect(cov.regexMatched, equals(cov.matched));
+
+    if (cov.matched > 0) {
+      expect(cov.successFamilies, isNotEmpty);
+      for (final f in cov.successFamilies) {
+        expect(f.healthScore, inInclusiveRange(0, 100));
+        expect(f.health.members, greaterThan(0));
+      }
+    }
+  });
+
   test('coverage percentage is within 0..100', () {
     if (adapter == null) return;
     final messages = DatasetLoader.load('example/sample_sms.json');

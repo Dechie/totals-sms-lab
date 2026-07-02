@@ -13,6 +13,12 @@ class PatternParser {
   static void x() {
     RegExp(pattern.regex, caseSensitive: false, multiLine: true, dotAll: true);
   }
+  static Future<Map<String, dynamic>?> extractTransactionDetails(String body) async {
+    return null;
+  }
+  static String? _cleanNumber(String? input) {
+    return input;
+  }
 }
 ''');
   File('${dir.path}/lib/services/sms_config_service.dart')
@@ -49,8 +55,15 @@ void main() {
       final r = LogicFidelity.fromAppDir(dir.path)!;
       expect(r.allFound, isTrue);
       expect(r.signature, matches(RegExp(r'^[0-9a-f]{16}$')));
-      expect(r.probeHashes.keys,
-          containsAll(['regexFlags', 'cleanSmsText', 'looksLikeTransaction']));
+      expect(
+          r.probeHashes.keys,
+          containsAll([
+            'regexFlags',
+            'cleanSmsText',
+            'looksLikeTransaction',
+            'extractTransactionDetails',
+            'cleanNumber',
+          ]));
     } finally {
       dir.deleteSync(recursive: true);
     }

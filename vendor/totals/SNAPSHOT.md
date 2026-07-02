@@ -11,6 +11,11 @@ self-contained and can run without a Totals checkout next to it.
 
 - Snapshot taken from Totals git rev: **85694be**
 - Date: 2026-06-30
+- Fidelity signature: `5e0eeeb5387a73fb` — now also covers the app's
+  `extractTransactionDetails` (field extraction + accept-gate) and `_cleanNumber`
+  source regions, which `FieldExtractor` mirrors to score successful parses.
+  If either drifts, `diff` flags it and `lib/parser_adapter/field_extractor.dart`
+  must be re-checked against `app/lib/utils/pattern_parser.dart`.
 
 ## Refreshing
 

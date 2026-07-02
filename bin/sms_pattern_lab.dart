@@ -171,9 +171,15 @@ void _runExport(_Args args) {
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(
       '${const JsonEncoder.withIndent('  ').convert(doc)}\n');
-  final categories = (doc['metadata'] as Map)['categories'];
+  final meta = doc['metadata'] as Map;
+  final categories = meta['categories'];
+  final successCategories = meta['successCategories'];
+  final msgs = meta['messages'] as Map;
   stdout.writeln('\n📦 Enrichment export → $outPath '
-      '($categories categor${categories == 1 ? 'y' : 'ies'}, no raw values; '
+      '($categories gap categor${categories == 1 ? 'y' : 'ies'}, '
+      '$successCategories success categor${successCategories == 1 ? 'y' : 'ies'}; '
+      '${msgs['regexMatched']} regex-matched → ${msgs['appAccepted']} app-accepted, '
+      '${msgs['appRejected']} app-rejected; no raw values; '
       'quality: ${quality.summary()}).');
 }
 

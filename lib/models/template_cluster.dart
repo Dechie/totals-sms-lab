@@ -1,4 +1,5 @@
 import '../annotation/shape_profile.dart';
+import 'extraction_health.dart';
 
 /// Transaction direction inferred from a template's action verb.
 ///
@@ -56,6 +57,11 @@ class TemplateCluster {
   /// redacts degraded clusters rather than risk leaking a raw value.
   bool degraded;
 
+  /// Aggregated field-extraction health across this cluster's members. Only set
+  /// for clusters of *matched* messages (built by `clusterMatched`); `null` for
+  /// unmatched clusters, which have nothing to extract.
+  final ExtractionHealth? health;
+
   TemplateCluster({
     required this.template,
     required this.occurrences,
@@ -67,6 +73,7 @@ class TemplateCluster {
     this.direction,
     Map<String, List<String>>? fieldSpans,
     this.degraded = false,
+    this.health,
   })  : examples = examples ?? <String>[],
         fieldSpans = fieldSpans ?? const {};
 

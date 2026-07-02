@@ -67,6 +67,12 @@ class LogicFidelity {
         'lib/services/sms_service.dart',
         (src) =>
             _function(src, '_looksLikeTransactionMessage(String messageBody)')),
+    // 6. Field extraction + the accept-gate (mirrored in FieldExtractor).
+    FidelityProbe('extractTransactionDetails', 'lib/utils/pattern_parser.dart',
+        (src) => _function(src, 'extractTransactionDetails(')),
+    // 7. Numeric cleaning applied to amount/balance/fees before parsing.
+    FidelityProbe('cleanNumber', 'lib/utils/pattern_parser.dart',
+        (src) => _function(src, '_cleanNumber(String? input)')),
   ];
 
   /// Compute the logic signature from a Totals app directory, or null if the

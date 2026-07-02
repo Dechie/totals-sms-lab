@@ -1,3 +1,4 @@
+import 'success_family.dart';
 import 'template_cluster.dart';
 import 'template_family.dart';
 
@@ -62,6 +63,17 @@ class CoverageReport {
   /// Candidate-new-format clusters grouped into families.
   final List<TemplateFamily> candidateFamilies;
 
+  /// Successfully-matched messages grouped into families, each scored by
+  /// extraction health. This is the "parsed, but is it usable?" signal — a
+  /// family with a low [SuccessFamily.healthScore] produces transactions that
+  /// silently break the app's income/expense/balance reconciliation.
+  final List<SuccessFamily> successFamilies;
+
+  /// Messages whose regex matched AND passed the app's accept-gate (a usable
+  /// transaction). Always ≤ [matched] (= regex-matched). The gap between them
+  /// is the silent-drop tier surfaced in the export.
+  final int appAccepted;
+
   const CoverageReport({
     required this.total,
     required this.matched,
@@ -72,9 +84,15 @@ class CoverageReport {
     this.noiseClusters = const [],
     this.attributedFamilies = const [],
     this.candidateFamilies = const [],
+    this.successFamilies = const [],
+    this.appAccepted = 0,
   });
 
   int get unmatched => total - matched;
+
+  /// Alias for [matched]: messages a regex claimed (regardless of whether the
+  /// extracted fields were usable). Contrast with [appAccepted].
+  int get regexMatched => matched;
 
   double get overallCoveragePercent =>
       total == 0 ? 0.0 : (matched / total) * 100.0;

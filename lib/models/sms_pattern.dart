@@ -10,6 +10,19 @@ class SmsPattern {
   final String type; // CREDIT or DEBIT
   final String description;
 
+  /// When true, the app's accept-gate REJECTS a match that produced no
+  /// `reference`; when false, the app synthesizes a placeholder reference.
+  /// Mirrors Totals' `SmsPattern.refRequired`. Needed to replicate the gate.
+  final bool? refRequired;
+
+  /// When true (and the regex has an `account` group), the gate rejects a match
+  /// with no extracted account. Mirrors Totals' `SmsPattern.hasAccount`.
+  final bool? hasAccount;
+
+  /// Whether the pattern is expected to carry fee fields (serviceCharge/vat).
+  /// Read for extraction-health reporting only; not part of the accept-gate.
+  final bool? hasFees;
+
   RegExp? _compiled;
   bool _compileFailed = false;
 
@@ -19,6 +32,9 @@ class SmsPattern {
     required this.regex,
     required this.type,
     this.description = '',
+    this.refRequired,
+    this.hasAccount,
+    this.hasFees,
   });
 
   factory SmsPattern.fromJson(Map<String, dynamic> json) => SmsPattern(
@@ -27,6 +43,9 @@ class SmsPattern {
         regex: (json['regex'] ?? '').toString(),
         type: (json['type'] ?? '').toString(),
         description: (json['description'] ?? '').toString(),
+        refRequired: json['refRequired'] as bool?,
+        hasAccount: json['hasAccount'] as bool?,
+        hasFees: json['hasFees'] as bool?,
       );
 
   /// Compiled regex, or `null` if the source regex is invalid.
