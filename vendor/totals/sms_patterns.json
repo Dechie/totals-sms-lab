@@ -1108,7 +1108,7 @@
     {
       "bankId": 6,
       "senderId": "telebirr",
-      "regex": "transaction\\s+for\\s+(?<type>[^\\n]+?)\\s+request.*?receipt\\s+number\\s+(?<receiptRef>[A-Z0-9]+).*?reversed\\s+to\\s+your\\s+account\\s+on\\s+(?<date>[^\\n]+?)\\.\\s+Your\\s+current\\s+balance\\s+is\\s+ETB\\s?(?<balance>[\\d,.]+).*?transaction\\s+number\\s+is\\s+(?<reference>[A-Z0-9]+)",
+      "regex": "transaction\\s+for\\s+(?<type>[^\\n]+?)\\s+request.*?receipt\\s+number\\s+(?<receiptRef>[A-Z0-9]+).*?amount\\s+(?:of\\s+)?(?:ETB|Br|birr)?\\s*(?<amount>[\\d,]+(?:\\.\\d+)?)\\s+is\\s+reversed\\s+to\\s+your\\s+account\\s+on\\s+(?<date>[^\\n]+?)\\.\\s+Your\\s+current\\s+balance\\s+is\\s+ETB\\s?(?<balance>[\\d,.]+).*?transaction\\s+number\\s+is\\s+(?<reference>[A-Z0-9]+)",
       "type": "CREDIT",
       "description": "Telebirr Transaction Reversal",
       "refRequired": true,
