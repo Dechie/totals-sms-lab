@@ -5,6 +5,35 @@ the pitch and quickstart see [README.md](../README.md); for *why the tool exists
 see [INSIGHTS.md](INSIGHTS.md); for the plan to build V2+ see
 [ROADMAP_NOTES.md](ROADMAP_NOTES.md).
 
+> **Codebase note:** The Totals codebase used by this lab has diverged from
+> `upstream/main`. Our work targets `upstream/playstore-version`, not `main`.
+> We did not realise this at first — the upstream's default branch is
+> `playstore-version`, not `main`, so we spent time developing against a
+> branch that was ~160 commits behind. By the time we noticed, our feature
+> work was done on the old base and had to be selectively merged forward.
+>
+> Key differences between the two branches:
+> - Common ancestor is `a4df19`; `playstore-version` is ~160 commits ahead.
+> - `playstore-version` has a different SMS architecture: `FallbackSmsParser`,
+>   `bank_sender_matcher`, `sms_transaction_source`, and the `pattern_parser`
+>   returns `Map<String, dynamic>?` (not `Transaction?` like our branch).
+> - DB schema is at v27 (v28 after our migration), with extra tables for
+>   profiles, shared expenses, sync, loans/debts, budgets, etc.
+> - Patterns in `sms_patterns.json` now include `fieldMapping` per pattern
+>   (maps regex capture groups to output fields like `amount`, `balance`,
+>   `reference`, etc.) and a `hasFees` boolean to flag patterns with service
+>   charges.
+> - Three correctness fixes were applied during the merge: (1) CBE false
+>   positive — generic "CBE credit, no ref" moved after all specific CBE
+>   patterns; (2) weak dedup keys — synthesized reference now includes
+>   type/amount/account in addition to bank+date; (3) stale balance —
+>   `latestParsedBalanceAfter` derives balance from `amount + totalFee` when
+>   `currentBalance` is null.
+>
+> If you are editing patterns, make sure they include the `fieldMapping`
+> object expected by the playstore-version `PatternParser`; patterns from
+> the old `main` branch lack this and will fail to extract fields correctly.
+
 ## Contents
 
 - [Architecture](#architecture)
