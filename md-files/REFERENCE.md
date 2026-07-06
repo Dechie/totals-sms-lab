@@ -1,7 +1,7 @@
 # SMS Pattern Lab — Reference
 
 The complete handbook: architecture, usage, and the baseline/drift system. For
-the pitch and quickstart see [README.md](README.md); for *why the tool exists*
+the pitch and quickstart see [README.md](../README.md); for *why the tool exists*
 see [INSIGHTS.md](INSIGHTS.md); for the plan to build V2+ see
 [ROADMAP_NOTES.md](ROADMAP_NOTES.md).
 

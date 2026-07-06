@@ -105,7 +105,7 @@ dart run sms_pattern_lab diff --from=../totals/app
 
 `analyze` prints per-bank coverage and the ranked list of missing templates,
 and writes a Markdown or self-contained HTML report. Full command and option
-reference is in [REFERENCE.md](REFERENCE.md).
+reference is in [REFERENCE.md](md-files/REFERENCE.md).
 
 ## What it does — and deliberately doesn't
 
@@ -119,9 +119,9 @@ the parser workflow; it doesn't try to be magic.
 
 ## Learn more
 
-- **[REFERENCE.md](REFERENCE.md)** — full handbook: architecture, every command
+- **[REFERENCE.md](md-files/REFERENCE.md)** — full handbook: architecture, every command
   and option, the adb bridge, reports, and the baseline & drift system.
-- **[ROADMAP_NOTES.md](ROADMAP_NOTES.md)** — design seams, invariants, and the
+- **[ROADMAP_NOTES.md](md-files/ROADMAP_NOTES.md)** — design seams, invariants, and the
   plan for V2/V3/V4. Read this before implementing new versions.
 
 **Status — V1 shipped:** coverage analysis, candidate-new-format discovery
